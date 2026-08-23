@@ -1,0 +1,163 @@
+# Public deployment topology. Run with:
+# docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+# Only Caddy exposes ports; PostgreSQL, Milvus, FastAPI and the frontend stay private.
+services:
+  caddy:
+    image: caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+    restart: unless-stopped
+    pids_limit: 128
+    mem_limit: 256m
+    logging: &rotated_logs
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env.production}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - applyease_caddy_data:/data
+      - applyease_caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - edge
+
+  postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    pids_limit: 256
+    mem_limit: 768m
+    logging: *rotated_logs
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-applyease}
+    volumes:
+      - applyease_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - app
+
+  milvus:
+    image: milvusdb/milvus:v2.5.5@sha256:1542866476d9f184cad2ea834d0d460a7cfd4bc9f83ef5df411fab08aeb218b4
+    restart: unless-stopped
+    pids_limit: 256
+    # Milvus is intentionally isolated from the public edge but still needs a
+    # bounded cache/process footprint on a small single-host deployment.
+    mem_limit: 1024m
+    logging: *rotated_logs
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: "local"
+    volumes:
+      - applyease_milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - app
+
+  backend:
+    build: ./backend
+    image: applyease-backend:production
+    restart: unless-stopped
+    pids_limit: 256
+    mem_limit: 768m
+    logging: *rotated_logs
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:?Set an immutable APP_VERSION in .env.production}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-applyease}
+      CORS_ORIGINS: https://${APP_DOMAIN}
+      ALLOWED_HOSTS: ${APP_DOMAIN}
+      FRONTEND_BASE_URL: https://${APP_DOMAIN}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env.production}
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_REQUIRE_VERIFIED_EMAIL: "true"
+      ENFORCE_HTTPS: "true"
+      MAIL_DELIVERY_MODE: smtp
+      MAIL_FROM: ${MAIL_FROM:?Set MAIL_FROM in .env.production}
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP_HOST in .env.production}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:?Set SMTP_USERNAME in .env.production}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP_PASSWORD in .env.production}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MILVUS_URI: http://milvus:19530
+      AI_EXTRACTION_ENABLED: ${AI_EXTRACTION_ENABLED:-true}
+      AI_JOB_ANALYSIS_ENABLED: ${AI_JOB_ANALYSIS_ENABLED:-true}
+      AI_MATERIAL_GENERATION_ENABLED: ${AI_MATERIAL_GENERATION_ENABLED:-true}
+      AI_APPLICATION_FORM_ENABLED: ${AI_APPLICATION_FORM_ENABLED:-true}
+      SCREENSHOT_OCR_ENABLED: ${SCREENSHOT_OCR_ENABLED:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks:
+      - app
+    healthcheck:
+      # The request originates in the container but must carry the public Host
+      # and HTTPS forwarding scheme that FastAPI requires in production.
+      test: ["CMD", "python", "-c", "import http.client; connection=http.client.HTTPConnection('127.0.0.1', 8000, timeout=3); connection.putrequest('GET', '/health/ready', skip_host=True); connection.putheader('Host', '${APP_DOMAIN}'); connection.putheader('X-Forwarded-Proto', 'https'); connection.endheaders(); response=connection.getresponse(); assert 200 <= response.status < 300, response.read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_AUTH_REQUIRED: "true"
+        VITE_API_URL: /api/v1
+        NGINX_CONF: nginx.production.conf
+    image: applyease-frontend:production
+    restart: unless-stopped
+    pids_limit: 128
+    mem_limit: 256m
+    logging: *rotated_logs
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # The frontend is the only relay between Caddy's edge network and the
+    # application network; Caddy cannot directly resolve backend/database.
+    networks:
+      - edge
+      - app
+
+volumes:
+  applyease_postgres_data:
+  applyease_milvus_data:
+  applyease_caddy_data:
+  applyease_caddy_config:
+
+networks:
+  edge:
+  app:

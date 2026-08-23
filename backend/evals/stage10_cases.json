@@ -1,0 +1,30 @@
+[
+  {
+    "id": "job-quant-intern",
+    "kind": "job",
+    "input": "Quantitative Technology Intern. Requirements: Python and SQL are required. Experience with machine learning is preferred. You will build data pipelines and evaluate trading signals.",
+    "expected_required": ["Python", "SQL"],
+    "expected_any": ["machine learning", "data pipelines"]
+  },
+  {
+    "id": "job-frontend-intern",
+    "kind": "job",
+    "input": "Software Engineering Intern. Must have TypeScript and React experience. Familiarity with REST APIs is a plus. Responsibilities include implementing accessible web interfaces.",
+    "expected_required": ["TypeScript", "React"],
+    "expected_any": ["REST APIs", "accessible web interfaces"]
+  },
+  {
+    "id": "form-narrative-and-sensitive",
+    "kind": "form",
+    "input": "Why do you want to join our company? Maximum 200 words\nPassport number *\nDescribe a project you are proud of. Limit 500 characters",
+    "expected_types": ["company_interest", "identity", "project"],
+    "expected_manual_types": ["identity"]
+  },
+  {
+    "id": "form-contact-and-technical",
+    "kind": "form",
+    "input": "Email *\nAre you authorized to work in Hong Kong?\nTell us about a technical challenge you solved. Maximum 300 words",
+    "expected_types": ["personal_info", "eligibility", "technical"],
+    "expected_manual_types": ["personal_info", "eligibility"]
+  }
+]

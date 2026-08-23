@@ -1,0 +1,118 @@
+name: ApplyEase CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pip install pip-audit
+      - run: pip-audit -r requirements.txt
+      - run: PYTHONPATH=. pytest -q
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test -- --run
+      - run: npm run build
+
+  extension:
+    name: Browser extension tests and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test -- --run
+      - run: npm run build
+
+  production-config:
+    name: Production deployment configuration
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose interpolation without secrets
+        run: docker compose --env-file .env.production.example -f docker-compose.production.yml config --quiet
+      - name: Validate Caddy production configuration
+        run: docker run --rm -e APP_DOMAIN=example.applyease.local -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Keep the Caddyfile formatted
+        run: |
+          test -z "$(docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17 caddy fmt --diff /etc/caddy/Caddyfile | grep -E '^[+-]' || true)"
+      - name: Validate post-deployment smoke test script
+        run: sh -n scripts/smoke-production.sh
+      - name: Validate production preflight script
+        run: sh -n scripts/preflight-production.sh
+      - name: Verify production image pins
+        run: sh scripts/verify-production-image-pins.sh
+      - name: Validate isolated restore rehearsal script
+        run: sh -n scripts/verify-postgres-restore.sh
+      - name: Rehearse a PostgreSQL schema backup and isolated restore
+        run: |
+          trap 'docker compose down -v --remove-orphans' EXIT
+          docker compose up -d postgres
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U applyease -d applyease >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose exec -T postgres pg_isready -U applyease -d applyease
+          mkdir -p /tmp/applyease-ci-backup
+          sh scripts/backup-postgres.sh --schema-only --output-dir /tmp/applyease-ci-backup
+          archive=$(find /tmp/applyease-ci-backup -type f -name '*.dump' -print -quit)
+          test -n "$archive"
+          sh scripts/verify-postgres-restore.sh --archive "$archive"
+      - name: Ensure the secret template cannot be deployed
+        run: |
+          cp .env.production.example /tmp/applyease-production-template.env
+          chmod 600 /tmp/applyease-production-template.env
+          if sh scripts/preflight-production.sh --env-file /tmp/applyease-production-template.env; then
+            echo "The production template must fail preflight until real secrets are supplied." >&2
+            exit 1
+          fi
+      - name: Build production application images
+        run: docker compose --env-file .env.production.example -f docker-compose.production.yml build backend frontend
+      - name: Validate production Nginx syntax
+        run: docker run --rm --add-host backend:127.0.0.1 applyease-frontend:production nginx -t
+      - name: Verify isolated production proxy stack
+        run: sh scripts/verify-production-stack.sh

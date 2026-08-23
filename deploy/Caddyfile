@@ -1,0 +1,22 @@
+{$APP_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+	# This must probe the application/database, not merely a static HTML file.
+	# Caddy stays on edge only; frontend is the sole edge-to-app relay.
+	# These endpoints contain no account data and intentionally require no auth.
+	@backend_health path /health /health/live /health/ready
+	handle @backend_health {
+		# Caddy reverse_proxy automatically supplies the real forwarded scheme.
+		reverse_proxy frontend:80
+	}
+
+	reverse_proxy frontend:80 {
+		# Caddy automatically supplies the real forwarded scheme; explicitly
+		# overwrite X-Real-IP because the backend uses it for rate limiting.
+		# The application uses this only in production, after this public edge
+		# has overwritten any client-supplied value.
+		header_up X-Real-IP {remote_host}
+	}
+}

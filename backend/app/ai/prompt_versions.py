@@ -1,0 +1,10 @@
+"""Stable prompt identifiers used by telemetry and regression evaluation."""
+
+EXPERIENCE_EXTRACTION = "experience-extraction-v1"
+JOB_REQUIREMENTS = "job-requirements-v1"
+JOB_MATCH = "job-match-v1"
+RESUME_GENERATION = "resume-generation-v1"
+COVER_LETTER_GENERATION = "cover-letter-generation-v1"
+APPLICATION_ANSWER = "application-answer-v1"
+FORM_ANALYSIS = "form-analysis-v1"
+SCREENSHOT_OCR = "screenshot-ocr-v1"

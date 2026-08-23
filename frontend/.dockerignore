@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules/
+dist/
+coverage/
+src/test/
+**/*.test.ts
+**/*.test.tsx

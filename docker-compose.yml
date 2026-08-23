@@ -1,0 +1,94 @@
+services:
+  milvus:
+    image: milvusdb/milvus:v2.5.5
+    container_name: applyease-milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: "local"
+    ports:
+      - "19530:19530"
+    volumes:
+      - applyease_milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  postgres:
+    image: postgres:16-alpine
+    container_name: applyease-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: applyease
+      POSTGRES_PASSWORD: applyease
+      POSTGRES_DB: applyease
+    ports:
+      - "5433:5432"
+    volumes:
+      - applyease_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U applyease -d applyease"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: applyease-backend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://applyease:applyease@postgres:5432/applyease
+      # Docker UI uses 5173; the local Vite source preview uses 5174.
+      # Both loopback spellings are needed because browsers compare origins exactly.
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      MILVUS_URI: http://milvus:19530
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/dev-mailbox:/app/dev-mailbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_AUTH_REQUIRED: ${VITE_AUTH_REQUIRED:-false}
+    container_name: applyease-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  applyease_postgres_data:
+  applyease_milvus_data:

@@ -1,0 +1,20 @@
+CHEN ZHENGZHONG
+University Student · Hong Kong
+
+EDUCATION
+The University of Hong Kong
+Bachelor student focused on technology, quantitative finance and applied artificial intelligence.
+
+WORK EXPERIENCE
+AI Developer | Novelflow | 2025 - Present
+- Developed an AI-assisted writing platform using React, TypeScript, FastAPI and PostgreSQL.
+- Designed structured AI workflows with source-aware outputs and human review.
+- Improved the application workflow by reducing repeated manual drafting tasks.
+
+RESEARCH EXPERIENCE
+Machine Learning Project | University Project | 2025 - 2026
+- Built Python data pipelines with Pandas and NumPy for model evaluation.
+- Compared model outputs and documented limitations to prevent unsupported claims.
+
+PERSONAL SKILLS
+Python, TypeScript, React, FastAPI, PostgreSQL, SQL, Pandas, NumPy, Git, Docker, Machine Learning

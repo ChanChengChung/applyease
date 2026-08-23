@@ -1,0 +1,18 @@
+Title: AI and Quantitative Technology Intern
+Company: Polymer Capital
+
+Polymer Capital is seeking a university student interested in applied AI, quantitative finance and production software. The intern will build reliable AI-powered tools, analyze structured and unstructured data, and communicate technical decisions clearly.
+
+Required skills:
+- Python and SQL
+- Practical machine learning experience
+- Ability to build and test APIs
+- Clear written communication and collaborative problem solving
+
+Preferred skills:
+- React or TypeScript frontend development
+- FastAPI, PostgreSQL and Docker
+- Interest in quantitative research and financial markets
+- Experience validating AI output and preventing unsupported claims
+
+Candidates should be able to explain one real project, its architecture, measurable outcome, limitations and next steps.

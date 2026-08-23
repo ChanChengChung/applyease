@@ -1,0 +1,6 @@
+Full name *
+Email address *
+Are you legally authorized to work in Hong Kong? *
+Why are you interested in Polymer Capital and this AI internship? Maximum 150 words *
+Describe a project where you used AI to solve a real-world problem. Maximum 300 words *
+What technical skill would you most like to improve during the internship? Maximum 100 words *
