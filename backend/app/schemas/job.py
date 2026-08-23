@@ -55,12 +55,19 @@ class JobImportUrlRequest(BaseModel):
     url: str = Field(min_length=12, max_length=2048)
 
 
-class JobImportDraft(JobAnalyzeRequest):
+class JobImportDraft(BaseModel):
+    """A reviewable import result; the user may need to complete a dynamic page."""
+
+    title: str = Field(default="Untitled role", max_length=200)
+    company: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=50000)
     location: str = ""
-
     deadline: str = ""
-
     source_url: str = ""
+    # JavaScript-rendered and anti-bot career pages can expose a page shell
+    # without exposing the actual JD to a server-side importer.  This is an
+    # expected, recoverable state rather than a malformed user request.
+    needs_manual_description: bool = False
 
 
 class JobRead(JobAnalyzeRequest):

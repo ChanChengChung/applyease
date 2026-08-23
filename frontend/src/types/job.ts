@@ -18,6 +18,7 @@ export type JobImportDraft = {
   location: string;
   deadline: string;
   source_url: string;
+  needs_manual_description: boolean;
 };
 export type Evidence = {
   requirement: string;

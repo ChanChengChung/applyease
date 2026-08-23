@@ -97,6 +97,8 @@ const en: Dict = {
   "nav.security": "Account settings",
   "account.cardLabel": "Account menu",
   "account.signedIn": "Signed-in account",
+  "account.guest": "Demo workspace",
+  "account.guestSub": "No account required on this local demo",
   "account.verified": "Email verified",
   "account.security": "Account & security",
   "nav.logout": "Log out",
@@ -487,6 +489,8 @@ const en: Dict = {
   "job.publicUrl": "Public HTTPS job link",
   "job.importFromUrl": "Import from link",
   "job.importing": "Importing…",
+  "job.importNeedsManualDescription":
+    "This career page did not expose its job description to the importer. We filled any available title and company; paste the description from the page to continue.",
   "job.screenshotLabel": "Job page screenshot (PNG/JPEG/WebP, up to 5 MB)",
   "job.ocrConsent":
     "I consent to sending this screenshot to Gemini for cloud OCR.",
@@ -1461,6 +1465,8 @@ const zhCN: Dict = {
   "nav.security": "账户设置",
   "account.cardLabel": "账号菜单",
   "account.signedIn": "已登录账号",
+  "account.guest": "演示工作区",
+  "account.guestSub": "本地演示无需登录账户",
   "account.verified": "邮箱已验证",
   "account.security": "账号与安全",
   "nav.logout": "退出登录",
@@ -1815,6 +1821,8 @@ const zhCN: Dict = {
   "job.publicUrl": "公开 HTTPS 职位链接",
   "job.importFromUrl": "从链接导入",
   "job.importing": "导入中...",
+  "job.importNeedsManualDescription":
+    "该招聘网站没有向导入器公开职位描述。系统已填入可获取的职位名称和公司；请从页面复制职位描述后继续分析。",
   "job.screenshotLabel": "职位页面截图（PNG/JPEG/WebP，最多 5 MB）",
   "job.ocrConsent": "我同意将此截图发送到 Gemini 进行云端 OCR。",
   "job.importFromScreenshot": "从截图导入",
@@ -2725,6 +2733,8 @@ const zhTW: Dict = {
   "nav.security": "帳戶設定",
   "account.cardLabel": "帳戶選單",
   "account.signedIn": "已登入帳戶",
+  "account.guest": "示範工作區",
+  "account.guestSub": "本機示範無需登入帳戶",
   "account.verified": "信箱已驗證",
   "account.security": "帳戶與安全",
   "nav.logout": "登出",
@@ -3079,6 +3089,8 @@ const zhTW: Dict = {
   "job.publicUrl": "公開 HTTPS 職位連結",
   "job.importFromUrl": "從連結匯入",
   "job.importing": "匯入中...",
+  "job.importNeedsManualDescription":
+    "該招聘網站沒有向匯入器公開職位描述。系統已填入可取得的職位名稱和公司；請從頁面複製職位描述後繼續分析。",
   "job.screenshotLabel": "職位頁面截圖（PNG/JPEG/WebP，最多 5 MB）",
   "job.ocrConsent": "我同意將此截圖傳送到 Gemini 進行雲端 OCR。",
   "job.importFromScreenshot": "從截圖匯入",

@@ -86,6 +86,27 @@ def test_url_import_prefers_structured_jobposting_description(monkeypatch):
     assert draft["company"] == "ExampleCo"
 
 
+def test_url_import_returns_a_manual_completion_draft_for_dynamic_page_shell(monkeypatch):
+    monkeypatch.setattr(
+        job_import_service, "_public_https_url", lambda value: "https://jobs.example.com/role"
+    )
+    # Many modern ATS pages only render their job description after JavaScript
+    # runs. The importer should not turn that recoverable limitation into a
+    # 422; it should leave the analysis form ready for a pasted JD instead.
+    page = """<html><head><title>AI Research Intern | ExampleCo</title></head>
+    <body><div id='app'></div></body></html>"""
+    monkeypatch.setattr(
+        job_import_service.httpx, "stream", lambda *args, **kwargs: _StreamResponse(page)
+    )
+
+    draft = job_import_service.import_public_job_page("https://jobs.example.com/role")
+
+    assert draft["title"] == "AI Research Intern"
+    assert draft["company"] == "ExampleCo"
+    assert draft["description"] == ""
+    assert draft["needs_manual_description"] is True
+
+
 def test_llm_job_review_uses_only_grounded_output_and_falls_back(monkeypatch):
     source = "About the Position\nBuild data pipelines for model evaluation.\nAbout You\nCommunicate findings clearly."
     monkeypatch.setattr(job_import_service.settings, "ai_job_analysis_enabled", True)

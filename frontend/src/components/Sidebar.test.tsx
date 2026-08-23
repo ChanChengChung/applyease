@@ -59,4 +59,24 @@ describe("Sidebar return and account controls", () => {
     );
     expect(onNavigate).toHaveBeenCalledWith("welcome");
   });
+
+  it("keeps the demo workspace, starting point, and AI quality routes visible without login", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+
+    renderWithProviders(
+      <Sidebar
+        activePage="profile"
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        onNavigate={onNavigate}
+        authRequired={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Account menu|账号菜单|帳戶選單/i }));
+    expect(screen.getByRole("menuitem", { name: /Dashboard|工作台/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /AI Response Quality|AI 生成回答质量|AI 生成回答品質/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Choose a starting point|重新选择起点|重新選擇起點/ })).toBeInTheDocument();
+  });
 });

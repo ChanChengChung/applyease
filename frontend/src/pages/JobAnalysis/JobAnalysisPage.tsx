@@ -7,7 +7,7 @@ import {
   previewJobAnalysis,
   saveAnalyzedJob,
 } from "../../services/jobApi";
-import type { MatchReport } from "../../types/job";
+import type { JobImportDraft, MatchReport } from "../../types/job";
 import type { NavigationJob } from "../../types/dashboard";
 import { PageFeedback } from "../../components/PageFeedback";
 import { QuantInternshipReadinessPack } from "../../components/QuantInternshipReadinessPack";
@@ -36,6 +36,7 @@ export function JobAnalysisPage({
     "loading-report" | "import-url" | "import-screenshot" | "analyze" | "save" | null
   >(null);
   const [error, setError] = useState("");
+  const [importNeedsManualDescription, setImportNeedsManualDescription] = useState(false);
   const [decisionDismissed, setDecisionDismissed] = useState(false);
 
   const t = useT();
@@ -70,22 +71,17 @@ export function JobAnalysisPage({
     };
   }, [initialJob?.id]);
 
-  const applyDraft = (draft: {
-    title: string;
-    company: string;
-    description: string;
-    location: string;
-    deadline: string;
-    source_url: string;
-  }) => {
+  const applyDraft = (draft: JobImportDraft) => {
     setTitle(draft.title);
     setCompany(draft.company);
     setDescription(draft.description);
+    setImportNeedsManualDescription(draft.needs_manual_description);
   };
 
   const importUrl = async () => {
     setActiveAction("import-url");
     setError("");
+    setImportNeedsManualDescription(false);
     try {
       applyDraft(await importJobUrl(url));
     } catch (e) {
@@ -251,6 +247,9 @@ export function JobAnalysisPage({
           </form>
         </div>
         {error && <PageFeedback kind="error" message={error} />}
+        {importNeedsManualDescription && (
+          <PageFeedback kind="info" message={t("job.importNeedsManualDescription")} />
+        )}
         {report && (
           <>
             <PageFeedback

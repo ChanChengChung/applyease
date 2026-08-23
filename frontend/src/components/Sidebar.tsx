@@ -342,7 +342,7 @@ export function Sidebar({
                 <span className="link-label">{t("account.cardLabel")}</span>
               )}
             </button>
-            {authRequired && onLogout && accountMenuOpen && (
+            {accountMenuOpen && (
               <section
                 className="sidebar-account-popover"
                 role="menu"
@@ -354,10 +354,12 @@ export function Sidebar({
                   </span>
                   <span>
                     <strong>
-                      {currentUser?.email || t("account.signedIn")}
+                      {currentUser?.email || t(authRequired ? "account.signedIn" : "account.guest")}
                     </strong>
                     <small>
-                      {currentUser?.email_verified
+                      {!authRequired
+                        ? t("account.guestSub")
+                        : currentUser?.email_verified
                         ? t("account.verified")
                         : t("account.security")}
                     </small>
@@ -381,13 +383,15 @@ export function Sidebar({
                   <span aria-hidden="true">✦</span>
                   {t("nav.returnToWelcome")}
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => handleNavigate("security")}
-                >
-                  {t("account.security")}
-                </button>
+                {authRequired && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleNavigate("security")}
+                  >
+                    {t("account.security")}
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -397,14 +401,16 @@ export function Sidebar({
                   <span aria-hidden="true">✦</span>
                   {t("nav.aiQuality")}
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="account-logout"
-                  onClick={onLogout}
-                >
-                  {t("nav.logout")}
-                </button>
+                {authRequired && onLogout && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="account-logout"
+                    onClick={onLogout}
+                  >
+                    {t("nav.logout")}
+                  </button>
+                )}
               </section>
             )}
           </div>

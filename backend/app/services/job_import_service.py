@@ -359,7 +359,7 @@ def draft_from_text(text: str, source_url: str = "") -> dict[str, str]:
     }
 
 
-def import_public_job_page(raw_url: str) -> dict[str, str]:
+def import_public_job_page(raw_url: str) -> dict[str, str | bool]:
     # Keep this indirection for testability and backwards compatibility with
     # earlier integrations that supplied a validated URL seam.
     url = _public_https_url(raw_url)
@@ -413,15 +413,10 @@ def import_public_job_page(raw_url: str) -> dict[str, str]:
     except httpx.HTTPError as exc:
 
         raise ValueError("Could not retrieve this public job page") from exc
-    # Layer 1: standard JobPosting JSON-LD description; layer 2: cleaned
-    # visible HTML. Layer 3 then performs a grounded, fail-safe review.
-    text = _json_ld_description(page) or _text(page)
-    text = _grounded_llm_job_body(text)
-
-    if len(text) < 20:
-
-        raise ValueError("No usable job description was found on this page")
-    draft = draft_from_text(text, url)
+    # Read the page metadata before assessing the body. Modern career sites
+    # commonly return an HTML application shell and render the description in
+    # the browser.  In that case we can still prefill a reviewable draft and
+    # ask the user to paste the JD, rather than failing the entire import.
     structured_title, structured_company = _json_ld_job(page)
     page_title = _meta(page, "og:title") or _meta(page, "twitter:title")
     document_title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", page)
@@ -429,8 +424,6 @@ def import_public_job_page(raw_url: str) -> dict[str, str]:
     title_candidate = (
         structured_title or _role_from_title(page_title) or _role_from_title(document_title)
     )
-    if title_candidate:
-        draft["title"] = title_candidate
     company_candidate = (
         structured_company
         or _meta(page, "og:site_name")
@@ -438,6 +431,23 @@ def import_public_job_page(raw_url: str) -> dict[str, str]:
         or _company_from_title(page_title)
         or _company_from_title(document_title)
     )
+    # Layer 1: standard JobPosting JSON-LD description; layer 2: cleaned
+    # visible HTML. Layer 3 then performs a grounded, fail-safe review.
+    text = _grounded_llm_job_body(_json_ld_description(page) or _text(page))
+    if len(text) >= 20:
+        draft: dict[str, str | bool] = draft_from_text(text, url)
+    else:
+        draft = {
+            "title": "Untitled role",
+            "company": "",
+            "description": "",
+            "location": "",
+            "deadline": "",
+            "source_url": url,
+            "needs_manual_description": True,
+        }
+    if title_candidate:
+        draft["title"] = title_candidate
     if company_candidate:
         draft["company"] = company_candidate.lstrip("@").strip()[:200]
 
