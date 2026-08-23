@@ -60,4 +60,3 @@ ApplyEase does **not** claim to guarantee interviews or submit external applicat
 - [AIApply](https://aiapply.co/)
 - [Teal — how it works](https://www.tealhq.com/how-it-works)
 - [Jobscan Resume Matcher](https://www.jobscan.co/resume-matcher)
-
