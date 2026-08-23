@@ -64,6 +64,17 @@ class Settings(BaseSettings):
 
     gemini_model: str = "gemini-2.5-flash"
 
+    # Alibaba Cloud Model Studio / DashScope exposes an OpenAI-compatible
+    # endpoint. A workspace-scoped key must be paired with that workspace's
+    # exact base URL; never place either value in browser-side VITE_ settings.
+    dashscope_api_key: str = ""
+
+    dashscope_base_url: str = ""
+
+    dashscope_model: str = "qwen-plus"
+
+    dashscope_max_requests_per_minute: int = 10
+
     llm_timeout_seconds: float = 30.0
 
     llm_max_retries: int = 2
@@ -189,6 +200,7 @@ class Settings(BaseSettings):
         "job_import_max_requests",
         "job_import_rate_limit_window_seconds",
         "gemini_max_requests_per_minute",
+        "dashscope_max_requests_per_minute",
         "brave_search_max_requests",
         "bocha_search_max_requests",
         "ai_generation_max_requests",

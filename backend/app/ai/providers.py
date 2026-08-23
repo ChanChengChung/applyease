@@ -45,7 +45,7 @@ class SlidingWindowLimiter:
 
             if len(self._calls) >= self.limit:
 
-                raise RateLimitExceeded("Gemini local rate limit reached; retry later")
+                raise RateLimitExceeded("AI provider local rate limit reached; retry later")
             self._calls.append(now)
 
 
@@ -258,11 +258,65 @@ class GeminiProvider:
             raise ProviderError("Gemini web research failed") from exc
 
 
+class DashScopeProvider:
+    """JSON generation through Model Studio's OpenAI-compatible endpoint."""
+
+    name = "dashscope"
+
+    def __init__(self, limiter: SlidingWindowLimiter | None = None) -> None:
+        self.limiter = limiter or SlidingWindowLimiter(
+            settings.dashscope_max_requests_per_minute
+        )
+
+    def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        prompt = _bounded_prompt(prompt)
+        if not settings.dashscope_api_key:
+            raise ProviderError("DashScope API key is not configured")
+        if not settings.dashscope_base_url:
+            raise ProviderError("DashScope base URL is not configured")
+        self.limiter.acquire()
+
+        payload = {
+            "model": settings.dashscope_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Return only a JSON object matching the requested schema.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.1,
+            # Existing local validation remains the authoritative schema check.
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            response = httpx.post(
+                f"{settings.dashscope_base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.dashscope_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=settings.llm_timeout_seconds,
+            )
+            response.raise_for_status()
+            content = response.json().get("choices", [{}])[0].get("message", {}).get(
+                "content", ""
+            )
+            return _parse_json(content)
+        except RateLimitExceeded:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, IndexError) as exc:
+            logger.warning("DashScope request failed (%s)", type(exc).__name__)
+            raise ProviderError("DashScope request failed") from exc
+
+
 class FallbackLLM:
     def __init__(self) -> None:
         self.providers = {
             "ollama": OllamaProvider(),
             "gemini": GeminiProvider(),
+            "dashscope": DashScopeProvider(),
         }
 
     def generate_json(
@@ -369,6 +423,10 @@ def _provider_model(provider: str) -> str:
     if provider == "gemini":
 
         return settings.gemini_model
+
+    if provider == "dashscope":
+
+        return settings.dashscope_model
 
     return ""
 

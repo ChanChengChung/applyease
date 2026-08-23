@@ -85,7 +85,7 @@ The workflow supports both students with an existing CV and students who need a 
 
 - **Frontend:** React, TypeScript and Vite
 - **Backend:** FastAPI, Python, Pydantic, SQLAlchemy and PostgreSQL
-- **AI:** Qwen3:4B through Ollama by default; optional Google Gemini fallback and explicit-consent OCR
+- **AI:** Qwen3:4B through Ollama by default; optional DashScope (Qwen) or Google Gemini fallback and explicit-consent OCR
 - **Grounding:** user-scoped RAG with Milvus vector search and a deterministic local fallback
 - **Opportunity research:** Bocha Web Search API plus official applicant-tracking-system sources
 - **Deployment:** Docker Compose
@@ -102,6 +102,14 @@ AI_APPLICATION_FORM_ENABLED=true
 
 # Optional cloud fallback / opt-in OCR
 GEMINI_API_KEY=your_key_here
+
+# Optional Alibaba Cloud Model Studio text generation. Copy the exact
+# workspace-specific "OpenAI compatible" URL shown on its API Key page.
+LLM_PROVIDER=dashscope
+LLM_FALLBACK_PROVIDER=ollama
+DASHSCOPE_API_KEY=your_workspace_key_here
+DASHSCOPE_BASE_URL=https://your-workspace.example/compatible-mode/v1
+DASHSCOPE_MODEL=qwen-plus
 
 # Optional Opportunity Radar web research
 BOCHA_SEARCH_API_KEY=your_key_here

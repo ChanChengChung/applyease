@@ -1,6 +1,7 @@
 import pytest
 
 from app.ai.providers import (
+    DashScopeProvider,
     FallbackLLM,
     ProviderError,
     RateLimitExceeded,
@@ -52,3 +53,32 @@ def test_fallback_uses_second_provider(monkeypatch):
     assert service.generate_json("hello", {"type": "object"}) == {"experiences": []}
 
     assert calls == ["ollama", "gemini"]
+
+
+def test_dashscope_posts_openai_compatible_json_request(monkeypatch):
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"ok": true}'}}]}
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return Response()
+
+    monkeypatch.setattr("app.ai.providers.settings.dashscope_api_key", "test-key")
+    monkeypatch.setattr(
+        "app.ai.providers.settings.dashscope_base_url", "https://workspace.example/v1/"
+    )
+    monkeypatch.setattr("app.ai.providers.settings.dashscope_model", "qwen-plus")
+    monkeypatch.setattr("app.ai.providers.httpx.post", fake_post)
+
+    assert DashScopeProvider().generate_json("hello", {"type": "object"}) == {"ok": True}
+    url, headers, payload, _timeout = calls[0]
+    assert url == "https://workspace.example/v1/chat/completions"
+    assert headers["Authorization"] == "Bearer test-key"
+    assert payload["model"] == "qwen-plus"
+    assert payload["response_format"] == {"type": "json_object"}
