@@ -98,6 +98,11 @@ class Settings(BaseSettings):
 
     bocha_search_max_requests: int = 3
 
+    # Official ATS board indexes change far less frequently than users rerun a
+    # search. A short cache keeps Opportunity Radar responsive without making
+    # job listings stale for a whole session.
+    official_job_feed_cache_seconds: int = 300
+
     # Account-level quotas are enforced in PostgreSQL before AI work starts.
     # They protect both local compute and Gemini's free tier across workers.
     ai_generation_max_requests: int = 30
@@ -203,6 +208,7 @@ class Settings(BaseSettings):
         "dashscope_max_requests_per_minute",
         "brave_search_max_requests",
         "bocha_search_max_requests",
+        "official_job_feed_cache_seconds",
         "ai_generation_max_requests",
         "ai_generation_rate_limit_window_seconds",
         "cloud_ocr_max_requests",

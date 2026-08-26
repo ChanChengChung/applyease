@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from html import unescape
@@ -146,6 +148,9 @@ _GREENHOUSE_PUBLIC_BOARDS = {
     "ripple": "Ripple",
     "block": "Block",
 }
+
+_greenhouse_board_cache: dict[str, tuple[float, list[dict]]] = {}
+_greenhouse_board_cache_lock = threading.Lock()
 
 _STUDENT_ROLE_PATTERN = re.compile(
     r"\b(?:intern(?:ship)?|graduate|new[ -]?grad|campus|co-op)\b", re.I
@@ -630,6 +635,34 @@ def _career_search_terms(career_goal: str, evidence: list[dict]) -> set[str]:
     return terms
 
 
+def _fetch_greenhouse_public_board(token: str) -> list[dict] | None:
+    """Fetch one employer-owned board, reusing a short-lived successful read."""
+    now = time.monotonic()
+    with _greenhouse_board_cache_lock:
+        cached = _greenhouse_board_cache.get(token)
+        if cached and now - cached[0] < settings.official_job_feed_cache_seconds:
+            return list(cached[1])
+    try:
+        response = httpx.get(
+            f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs",
+            headers={"User-Agent": "ApplyEaseOpportunityRadar/1.0"},
+            timeout=10.0,
+            trust_env=False,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+        if not isinstance(jobs, list):
+            jobs = []
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError):
+        # Do not cache provider errors: a transient outage should recover on
+        # the next user request instead of persisting a false empty board.
+        return None
+    with _greenhouse_board_cache_lock:
+        _greenhouse_board_cache[token] = (now, jobs)
+    return list(jobs)
+
+
 def _greenhouse_public_board_search(
     evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
 ) -> dict:
@@ -643,19 +676,7 @@ def _greenhouse_public_board_search(
 
     def fetch_board(item: tuple[str, str]) -> tuple[str, str, list[dict]]:
         token, company = item
-        try:
-            response = httpx.get(
-                f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs",
-                headers={"User-Agent": "ApplyEaseOpportunityRadar/1.0"},
-                timeout=10.0,
-                trust_env=False,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
-            return token, company, jobs if isinstance(jobs, list) else []
-        except (httpx.HTTPError, ValueError, AttributeError, TypeError):
-            return token, company, []
+        return token, company, _fetch_greenhouse_public_board(token) or []
 
     board_rows: list[tuple[str, str, list[dict]]] = []
     with ThreadPoolExecutor(max_workers=min(8, len(_GREENHOUSE_PUBLIC_BOARDS))) as pool:

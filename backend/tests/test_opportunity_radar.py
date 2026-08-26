@@ -133,6 +133,31 @@ def test_grounded_source_matching_accepts_domain_title_for_company_careers_page(
     assert source["url"] == "https://example.com/jane-street"
 
 
+def test_greenhouse_board_index_is_short_term_cached_after_success(monkeypatch):
+    token = f"cache-test-{uuid.uuid4().hex}"
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"jobs": [{"id": 42, "title": "Software Intern"}]}
+
+    def fake_get(url, **_kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr(opportunity_service.httpx, "get", fake_get)
+    monkeypatch.setattr(opportunity_service.settings, "official_job_feed_cache_seconds", 300)
+
+    first = opportunity_service._fetch_greenhouse_public_board(token)
+    second = opportunity_service._fetch_greenhouse_public_board(token)
+
+    assert first == second == [{"id": 42, "title": "Software Intern"}]
+    assert len(calls) == 1
+
+
 def test_brave_search_covers_multiple_official_ats_and_ranks_confirmed_evidence(monkeypatch):
     monkeypatch.setattr(opportunity_service.settings, "brave_search_api_key", "test-token")
     monkeypatch.setattr(opportunity_service.settings, "brave_search_max_requests", 3)
