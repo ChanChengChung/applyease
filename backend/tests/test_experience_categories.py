@@ -88,6 +88,39 @@ def test_category_failure_preserves_successful_ai_extraction(monkeypatch):
     assert result == extracted
 
 
+def test_category_classifier_batches_long_experience_lists(monkeypatch):
+    calls = []
+
+    def fake_generate_json(prompt, _schema, *, feature, prompt_version):
+        calls.append((prompt, feature, prompt_version))
+        indices = list(range(0, 10)) if len(calls) == 1 else [10]
+        return {
+            "classifications": [
+                {"index": index, "category": "project"} for index in indices
+            ]
+        }
+
+    monkeypatch.setattr(
+        "app.ai.experience_extractor.llm.generate_json", fake_generate_json
+    )
+    records = [
+        {
+            "title": f"Record {index}",
+            "organization": "Example",
+            "description": "x" * 1200,
+            "skills": [],
+        }
+        for index in range(11)
+    ]
+
+    result = classify_experience_categories(records)
+
+    assert len(calls) == 2
+    assert all(feature == "experience_category_classification" for _, feature, _ in calls)
+    assert all(version == "experience-category-v2" for _, _, version in calls)
+    assert [item["category"] for item in result] == ["project"] * 11
+
+
 def test_rule_extractor_assigns_durable_evidence_categories():
     records = extract_experiences(
         """EDUCATION

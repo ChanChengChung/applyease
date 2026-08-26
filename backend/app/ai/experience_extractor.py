@@ -7,6 +7,9 @@ from app.ai.prompt_versions import EXPERIENCE_EXTRACTION
 
 
 EXPERIENCE_CATEGORIES = {"education", "internship", "leadership", "research", "project"}
+# Keep even unusually long CVs far below the provider prompt ceiling. The
+# input record index remains global, so batches cannot swap category results.
+CATEGORY_CLASSIFICATION_BATCH_SIZE = 10
 
 CATEGORY_CLASSIFICATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -104,6 +107,43 @@ EXPERIENCE_SCHEMA: dict[str, Any] = {
 }
 
 
+def _classify_category_batch(candidates: list[dict[str, Any]]) -> dict[int, str]:
+    """Classify a bounded batch and return its globally indexed results."""
+    if not candidates:
+        return {}
+    valid_indices = {item["index"] for item in candidates}
+    prompt = (
+        "Classify each extracted CV record into exactly one evidence category. "
+        "Use the complete record meaning, not only title keywords or a CV section heading. "
+        "Allowed categories: education (degree/course enrolment), internship (paid or formal work placement), "
+        "leadership (student society, volunteering, organising or leading people), "
+        "research (academic or independent research activity), project (a build, competition, hackathon, or other deliverable). "
+        "Do not infer facts not present. Return one classification for every input index and only valid JSON.\n"
+        f"RECORDS:\n{candidates}"
+    )
+    result = llm.generate_json(
+        prompt,
+        CATEGORY_CLASSIFICATION_SCHEMA,
+        feature="experience_category_classification",
+        prompt_version="experience-category-v2",
+    )
+    rows = result.get("classifications")
+    if not isinstance(rows, list):
+        raise ProviderError("LLM classifications field must be an array")
+
+    classifications: dict[int, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index")
+        category = str(row.get("category", "")).strip().lower()
+        if isinstance(index, int) and index in valid_indices and category in EXPERIENCE_CATEGORIES:
+            classifications[index] = category
+    if len(classifications) != len(candidates):
+        raise ProviderError("LLM did not classify every experience in a batch")
+    return classifications
+
+
 def classify_experience_categories(experiences: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Classify extracted evidence using the complete record, not headings/keywords.
 
@@ -119,38 +159,15 @@ def classify_experience_categories(experiences: list[dict[str, Any]]) -> list[di
             "index": index,
             "title": str(item.get("title", ""))[:200],
             "organization": str(item.get("organization", ""))[:200],
-            "description": str(item.get("description", ""))[:1200],
+            "description": str(item.get("description", ""))[:900],
             "skills": [str(skill)[:80] for skill in item.get("skills", [])[:20]],
         }
         for index, item in enumerate(experiences)
     ]
-    prompt = (
-        "Classify each extracted CV record into exactly one evidence category. "
-        "Use the complete record meaning, not only title keywords or a CV section heading. "
-        "Allowed categories: education (degree/course enrolment), internship (paid or formal work placement), "
-        "leadership (student society, volunteering, organising or leading people), "
-        "research (academic or independent research activity), project (a build, competition, hackathon, or other deliverable). "
-        "Do not infer facts not present. Return one classification for every input index and only valid JSON.\n"
-        f"RECORDS:\n{candidates}"
-    )
-    result = llm.generate_json(
-        prompt,
-        CATEGORY_CLASSIFICATION_SCHEMA,
-        feature="experience_category_classification",
-        prompt_version="experience-category-v1",
-    )
-    rows = result.get("classifications")
-    if not isinstance(rows, list):
-        raise ProviderError("LLM classifications field must be an array")
-
     by_index: dict[int, str] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        index = row.get("index")
-        category = str(row.get("category", "")).strip().lower()
-        if isinstance(index, int) and 0 <= index < len(experiences) and category in EXPERIENCE_CATEGORIES:
-            by_index[index] = category
+    for start in range(0, len(candidates), CATEGORY_CLASSIFICATION_BATCH_SIZE):
+        batch = candidates[start : start + CATEGORY_CLASSIFICATION_BATCH_SIZE]
+        by_index.update(_classify_category_batch(batch))
     if len(by_index) != len(experiences):
         raise ProviderError("LLM did not classify every extracted experience")
 
