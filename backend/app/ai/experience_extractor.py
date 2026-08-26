@@ -8,6 +8,27 @@ from app.ai.prompt_versions import EXPERIENCE_EXTRACTION
 
 EXPERIENCE_CATEGORIES = {"education", "internship", "leadership", "research", "project"}
 
+CATEGORY_CLASSIFICATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "classifications": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "category": {
+                        "type": "string",
+                        "enum": ["education", "internship", "leadership", "research", "project"],
+                    },
+                },
+                "required": ["index", "category"],
+            },
+        }
+    },
+    "required": ["classifications"],
+}
+
 
 def _infer_category(title: str, description: str, supplied: object) -> str:
     """Keep parsing resilient when a local model omits or misspells a category."""
@@ -83,6 +104,61 @@ EXPERIENCE_SCHEMA: dict[str, Any] = {
 }
 
 
+def classify_experience_categories(experiences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Classify extracted evidence using the complete record, not headings/keywords.
+
+    The category is a presentation and organisation aid, never a claim about
+    the student's seniority.  We keep the five values intentionally closed so
+    an LLM cannot create a new, unfilterable category in the Experience Bank.
+    """
+    if not experiences:
+        return experiences
+
+    candidates = [
+        {
+            "index": index,
+            "title": str(item.get("title", ""))[:200],
+            "organization": str(item.get("organization", ""))[:200],
+            "description": str(item.get("description", ""))[:1200],
+            "skills": [str(skill)[:80] for skill in item.get("skills", [])[:20]],
+        }
+        for index, item in enumerate(experiences)
+    ]
+    prompt = (
+        "Classify each extracted CV record into exactly one evidence category. "
+        "Use the complete record meaning, not only title keywords or a CV section heading. "
+        "Allowed categories: education (degree/course enrolment), internship (paid or formal work placement), "
+        "leadership (student society, volunteering, organising or leading people), "
+        "research (academic or independent research activity), project (a build, competition, hackathon, or other deliverable). "
+        "Do not infer facts not present. Return one classification for every input index and only valid JSON.\n"
+        f"RECORDS:\n{candidates}"
+    )
+    result = llm.generate_json(
+        prompt,
+        CATEGORY_CLASSIFICATION_SCHEMA,
+        feature="experience_category_classification",
+        prompt_version="experience-category-v1",
+    )
+    rows = result.get("classifications")
+    if not isinstance(rows, list):
+        raise ProviderError("LLM classifications field must be an array")
+
+    by_index: dict[int, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index")
+        category = str(row.get("category", "")).strip().lower()
+        if isinstance(index, int) and 0 <= index < len(experiences) and category in EXPERIENCE_CATEGORIES:
+            by_index[index] = category
+    if len(by_index) != len(experiences):
+        raise ProviderError("LLM did not classify every extracted experience")
+
+    for index, item in enumerate(experiences):
+        item["category"] = by_index[index]
+    return experiences
+
+
 def extract_with_llm(text: str, source_file: str) -> list[dict[str, Any]]:
     prompt = (
         "Extract only factual work, project, research, education, leadership, or competition "
@@ -145,13 +221,16 @@ def extract_experiences_safe(text: str, source_file: str) -> tuple[list[dict[str
 
         try:
             result = extract_with_llm(text, source_file)
-
-            record_outcome(status="success", provider="llm")
-
-            return result, "llm"
-
         except ProviderError as exc:
             result = extract_experiences(text, source_file)
+
+            # The parser's section heuristics preserve an offline demo path,
+            # but an available provider still gets the final decision over the
+            # full record rather than leaving categories as string matches.
+            try:
+                result = classify_experience_categories(result)
+            except ProviderError:
+                pass
 
             record_outcome(
                 status="rule_fallback",
@@ -161,3 +240,20 @@ def extract_experiences_safe(text: str, source_file: str) -> tuple[list[dict[str
             )
 
             return result, "rules"
+
+        # Extraction and classification intentionally degrade separately. A
+        # transient category request must never discard an otherwise complete
+        # AI extraction and replace it with the less detailed section parser.
+        try:
+            result = classify_experience_categories(result)
+        except ProviderError as exc:
+            record_outcome(
+                status="partial_fallback",
+                provider="llm",
+                category=error_category(exc),
+                fallback_from="category_classifier",
+            )
+            return result, "llm_category_fallback"
+
+        record_outcome(status="success", provider="llm")
+        return result, "llm"
