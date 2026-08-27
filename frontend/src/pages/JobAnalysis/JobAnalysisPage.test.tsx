@@ -1,10 +1,11 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../../test/render";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   previewJobAnalysis: vi.fn(),
+  previewManualJobAnalysis: vi.fn(),
   saveAnalyzedJob: vi.fn(),
   getMatchReport: vi.fn(),
   importJobUrl: vi.fn(),
@@ -43,7 +44,9 @@ const report = {
 describe("JobAnalysisPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     api.previewJobAnalysis.mockResolvedValue({ ...report, job: { ...job, id: 0 } });
+    api.previewManualJobAnalysis.mockResolvedValue({ ...report, job: { ...job, id: 0 } });
     api.saveAnalyzedJob.mockResolvedValue(job);
     api.getMatchReport.mockResolvedValue(report);
     api.importJobUrl.mockResolvedValue({
@@ -71,11 +74,37 @@ describe("JobAnalysisPage", () => {
       "https://jobs.example.com/quant",
     );
 
-    expect(await screen.findByDisplayValue("Quant Intern")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Quant Intern" })).toBeInTheDocument();
+    expect(screen.getByText(/地点：Hong Kong/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "手动建立职位简介" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /查看完整分析结果/ })).toHaveAttribute(
+      "href",
+      "#job-analysis-result",
+    );
+  });
 
-    expect(screen.getByDisplayValue(job.description)).toBeInTheDocument();
+  it("asks the student to manually confirm sensitive eligibility requirements", async () => {
+    const user = userEvent.setup();
+    api.previewManualJobAnalysis.mockResolvedValue({
+      ...report,
+      job: { ...job, id: 0 },
+      eligibility_checks: [
+        {
+          kind: "work_authorization",
+          requirement: "Must have right to work in Hong Kong.",
+          status: "needs_confirmation",
+          evidence: "",
+        },
+      ],
+    });
+    renderWithProviders(<JobAnalysisPage />);
 
-    expect(screen.queryByText(/地点：Hong Kong/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("其他已知要求"), job.description);
+    await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
+
+    expect(await screen.findByText("申请前请先确认资格")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "我符合这项要求" }));
+    expect(await screen.findByText("可以申请，但需先补强")).toBeInTheDocument();
   });
 
   it("shows loading copy only on the action that is actually running", async () => {
@@ -104,7 +133,7 @@ describe("JobAnalysisPage", () => {
 
     expect(screen.getByRole("button", { name: "导入中..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "从截图导入" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "分析职位" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "识别中..." })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "分析中..." })).not.toBeInTheDocument();
 
@@ -116,7 +145,14 @@ describe("JobAnalysisPage", () => {
       deadline: "30 September",
       source_url: "https://jobs.example.com/quant",
     });
-    expect(await screen.findByDisplayValue("Quant Intern")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Quant Intern" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.previewJobAnalysis).toHaveBeenCalledWith({
+        title: "Quant Intern",
+        company: "Jane Street",
+        description: job.description,
+      }),
+    );
   });
 
   it("analyzes a posting and renders score, gaps, and grounded evidence", async () => {
@@ -130,14 +166,18 @@ describe("JobAnalysisPage", () => {
 
     await user.type(screen.getByLabelText("公司"), "Example");
 
-    await user.type(screen.getByLabelText("职位描述"), job.description);
+    await user.type(screen.getByLabelText("其他已知要求"), job.description);
 
-    await user.click(screen.getByRole("button", { name: "分析职位" }));
+    await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
 
-    expect(api.previewJobAnalysis).toHaveBeenCalledWith({
+    expect(api.previewManualJobAnalysis).toHaveBeenCalledWith({
       title: "AI Intern",
       company: "Example",
-      description: job.description,
+      job_category: "",
+      location: "",
+      required_skills: [],
+      responsibilities: [],
+      additional_details: job.description,
     });
 
     expect(await screen.findByText("50")).toBeInTheDocument();
@@ -180,26 +220,47 @@ describe("JobAnalysisPage", () => {
     });
   });
 
-  it("disables submission for a short description", async () => {
+  it("requires at least one manual role fact before analysis", async () => {
     const user = userEvent.setup();
     renderWithProviders(<JobAnalysisPage />);
 
-    await user.type(screen.getByLabelText("职位描述"), "too short");
+    expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeDisabled();
+    await user.type(screen.getByLabelText("技能要求"), "Python");
 
-    expect(screen.getByRole("button", { name: "分析职位" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeEnabled();
+  });
+
+  it("restores an unsaved analysis after the workspace is remounted", async () => {
+    const user = userEvent.setup();
+    const firstRender = renderWithProviders(<JobAnalysisPage />);
+
+    await user.type(screen.getByLabelText("职位名称"), "AI Intern");
+    await user.type(screen.getByLabelText("公司"), "Example");
+    await user.type(screen.getByLabelText("其他已知要求"), job.description);
+    await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
+    expect(await screen.findByText("50")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem("applyease.job-analysis-draft.v1")).toContain("AI Intern"),
+    );
+
+    firstRender.unmount();
+    renderWithProviders(<JobAnalysisPage />);
+
+    expect(await screen.findByText("50")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("AI Intern")).toBeInTheDocument();
   });
 
   it("shows API failures and clears the busy state", async () => {
     const user = userEvent.setup();
-    api.previewJobAnalysis.mockRejectedValue(new Error("AI 服务超时"));
+    api.previewManualJobAnalysis.mockRejectedValue(new Error("AI 服务超时"));
     renderWithProviders(<JobAnalysisPage />);
 
-    await user.type(screen.getByLabelText("职位描述"), job.description);
+    await user.type(screen.getByLabelText("其他已知要求"), job.description);
 
-    await user.click(screen.getByRole("button", { name: "分析职位" }));
+    await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
 
     expect(await screen.findByText("AI 服务超时")).toHaveClass("error");
 
-    expect(screen.getByRole("button", { name: "分析职位" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeEnabled();
   });
 });

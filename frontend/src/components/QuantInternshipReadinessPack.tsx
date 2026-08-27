@@ -2,34 +2,6 @@ import { useState } from "react";
 import type { MatchReport } from "../types/job";
 import { useT } from "../i18n/LanguageProvider";
 
-const QUANT_AI_SIGNALS = [
-  "quant",
-  "research",
-  "python",
-  "statistics",
-  "probability",
-  "algorithm",
-  "machine learning",
-  "pytorch",
-  "data",
-  "model",
-  "c++",
-  "risk",
-  "trading",
-];
-
-function isRelevant(report: MatchReport) {
-  return [
-    report.job.title,
-    report.job.description,
-    ...report.job.required_skills,
-  ]
-    .join(" ")
-    .toLowerCase()
-    .split(/\s+/)
-    .some((word) => QUANT_AI_SIGNALS.some((signal) => word.includes(signal)));
-}
-
 function compact(value: string, fallback: string) {
   const clean = value.replace(/\s+/g, " ").trim();
   if (!clean) return fallback;
@@ -37,7 +9,7 @@ function compact(value: string, fallback: string) {
   return sentence.length > 200 ? `${sentence.slice(0, 197).trim()}…` : sentence;
 }
 
-/** Creates questions from this saved role's requirements, not generic templates. */
+/** Creates rehearsal questions from any saved role's requirements, not generic templates. */
 export function QuantInternshipReadinessPack({
   report,
 }: {
@@ -46,8 +18,6 @@ export function QuantInternshipReadinessPack({
   const t = useT();
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<Record<string, boolean>>({});
-  if (!isRelevant(report)) return null;
-
   const role = `${report.job.company || t("quantPack.thisCompany")} · ${report.job.title}`;
   const responsibility = compact(
     report.job.responsibilities[0] || "",

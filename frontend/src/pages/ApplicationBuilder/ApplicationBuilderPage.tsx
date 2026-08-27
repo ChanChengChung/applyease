@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MaterialEditor } from "../../components/MaterialEditor";
 import { EvidenceTracing } from "../../components/EvidenceTracing";
 import { ApplicationIntegrityGate } from "../../components/ApplicationIntegrityGate";
+import { QuantInternshipReadinessPack } from "../../components/QuantInternshipReadinessPack";
 import { PageFeedback } from "../../components/PageFeedback";
 import {
   ResumePreview,
@@ -24,11 +25,13 @@ import {
 import {
   analyzeJob,
   getApplicationReadiness,
+  getMatchReport,
   importJobUrl,
   listJobs,
 } from "../../services/jobApi";
 import type { Job } from "../../types/job";
 import type { ApplicationReadiness } from "../../types/job";
+import type { MatchReport } from "../../types/job";
 import type {
   Material,
   OutputLanguage,
@@ -90,6 +93,7 @@ export function ApplicationBuilderPage({
   const [sectionOrder, setSectionOrder] = useState<string[]>([]);
   const [hiddenSections, setHiddenSections] = useState<string[]>([]);
   const [readiness, setReadiness] = useState<ApplicationReadiness | null>(null);
+  const [interviewReport, setInterviewReport] = useState<MatchReport | null>(null);
   const { language } = useI18n();
   const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>(language);
   const questionInput = useRef<HTMLTextAreaElement>(null);
@@ -218,6 +222,24 @@ export function ApplicationBuilderPage({
     void getApplicationReadiness(id)
       .then(setReadiness)
       .catch(() => setReadiness(null));
+  }, [jobId]);
+  useEffect(() => {
+    const id = Number(jobId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setInterviewReport(null);
+      return;
+    }
+    let active = true;
+    void getMatchReport(id)
+      .then((report) => {
+        if (active) setInterviewReport(report);
+      })
+      .catch(() => {
+        if (active) setInterviewReport(null);
+      });
+    return () => {
+      active = false;
+    };
   }, [jobId]);
 
   const validJobId = () => {
@@ -838,6 +860,8 @@ export function ApplicationBuilderPage({
             </div>
           </section>
         </div>
+
+        {interviewReport && <QuantInternshipReadinessPack report={interviewReport} />}
 
         {error && <PageFeedback kind="error" message={error} />}
         {(materialHistory || readiness) && (
