@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.ai.material_generator import (
+    ProviderError,
     generate_cover_letter_ai,
+    generate_cover_letter_safe,
     generate_resume_ai,
     generate_resume_safe,
 )
@@ -154,6 +156,40 @@ def test_ai_cover_letter_prompt_requires_a_grounded_letter_structure(monkeypatch
 
     assert "three short paragraphs plus a closing" in captured["prompt"]
     assert "Do not use placeholders, headings, bullet points" in captured["prompt"]
+
+
+def test_ai_cover_letter_rejects_a_cv_style_bullet_dump(monkeypatch):
+    monkeypatch.setattr(
+        "app.ai.material_generator.llm.generate_json",
+        lambda *_: {
+            "text": "Dear Hiring Team,\n\nData Intern\n- Built a Python data pipeline.\n\nSincerely,\nName",
+            "citations": [
+                {
+                    "experience_id": 40,
+                    "claim": "Built a Python data pipeline.",
+                    "evidence_quote": "Built a Python data pipeline.",
+                }
+            ],
+        },
+    )
+
+    try:
+        generate_cover_letter_ai(make_job(), [make_experience()])
+        assert False, "A CV-style letter must be rejected"
+    except ProviderError as exc:
+        assert "bullet" in str(exc).casefold()
+
+
+def test_invalid_ai_cover_letter_uses_grounded_rule_fallback(monkeypatch):
+    monkeypatch.setattr(
+        "app.ai.material_generator.llm.generate_json",
+        lambda *_: {"text": "Dear Hiring Team,\n- Built a Python data pipeline.", "citations": []},
+    )
+
+    material = generate_cover_letter_safe(make_job(), [make_experience()])
+
+    assert material.generation_method == "rules"
+    assert "- Built a Python data pipeline." not in material.text
 
 
 def test_hallucinated_ai_material_falls_back_to_rules(monkeypatch):

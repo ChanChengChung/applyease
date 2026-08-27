@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from app.ai.providers import ProviderError, llm
@@ -31,6 +32,33 @@ MATERIAL_SCHEMA: dict[str, Any] = {
     },
     "required": ["text", "citations"],
 }
+
+
+def _validate_cover_letter_quality(text: str, job: Job, output_language: str) -> None:
+    """Reject structurally poor letters even when their facts are supported.
+
+    Citation validation prevents hallucinations, but it cannot distinguish a
+    natural letter from a pasted CV.  This small deterministic gate keeps the
+    model's promised format reviewable before the user sees or saves it.
+    """
+    normalized = text.strip()
+    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+    if any(re.match(r"^(?:[-*•▪] |\d+[.)] )", line) for line in lines):
+        raise ProviderError("AI cover letter must not contain bullet points")
+    if re.search(r"\[(?:your\s+name|name|姓名|您的姓名)\]", normalized, re.I):
+        raise ProviderError("AI cover letter must not contain a name placeholder")
+    if job.title and job.title.casefold() not in normalized.casefold():
+        raise ProviderError("AI cover letter must name the target role")
+    if output_language == "en":
+        has_greeting = normalized.casefold().startswith("dear ")
+        has_closing = bool(
+            re.search(r"\b(?:sincerely|best regards|kind regards|yours faithfully)\b", normalized, re.I)
+        )
+    else:
+        has_greeting = normalized.startswith(("招聘团队", "招募团队", "尊敬的", "您好"))
+        has_closing = any(marker in normalized for marker in ("此致", "敬礼", "期待"))
+    if not has_greeting or not has_closing:
+        raise ProviderError("AI cover letter is missing a professional greeting or closing")
 
 
 def select_relevant_experiences(
@@ -116,6 +144,9 @@ def _generate(
     if max_characters and len(text) > max_characters:
 
         raise ProviderError("AI material exceeded the requested character limit")
+
+    if material_type == "cover_letter":
+        _validate_cover_letter_quality(text, job, output_language)
     sources = validate_ai_citations(result.get("citations"), experiences, text)
 
     passed, warnings = validate_material_text(
