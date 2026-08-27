@@ -40,6 +40,8 @@ export function StarterPlanner({
   const [weeks, setWeeks] = useState("4");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const interestTooShort =
+    interest.trim().length > 0 && interest.trim().length < 8;
 
   const createPlan = async () => {
     if (interest.trim().length < 8) {
@@ -113,10 +115,17 @@ export function StarterPlanner({
         <textarea
           value={interest}
           maxLength={1000}
+          aria-invalid={interestTooShort}
+          aria-describedby={interestTooShort ? "starter-interest-minimum" : undefined}
           onChange={(event) => setInterest(event.target.value)}
           placeholder={t("starter.placeholder")}
         />
       </label>
+      {interestTooShort && (
+        <p className="starter-interest-minimum" id="starter-interest-minimum" role="status">
+          {t("starter.minInterest")}
+        </p>
+      )}
       <div className="starter-questions">
         <fieldset>
           <legend>{t("starter.level")}</legend>

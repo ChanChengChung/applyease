@@ -2161,7 +2161,7 @@ const zhCN: Dict = {
   "starter.firstAction": "第一步：",
   "starter.evidenceNote":
     "报名课程或比赛并不等于一段经历。完成真实工作并写下自己的反思后，才能创建个人经历库草稿。",
-  "starter.minInterest": "请多说一点你想探索的方向（至少 8 个字符）。",
+  "starter.minInterest": "至少8个字。",
   "starter.failed": "无法生成起步计划。",
   "starter.level": "你目前处于什么阶段？",
   "starter.level.none": "没有相关经历",
@@ -3481,7 +3481,7 @@ const zhTW: Dict = {
   "starter.firstAction": "第一步：",
   "starter.evidenceNote":
     "報名課程或比賽並不等於一段經歷。完成真實工作並寫下自己的反思後，才能建立個人經歷庫草稿。",
-  "starter.minInterest": "請多說一點你想探索的方向（至少 8 個字元）。",
+  "starter.minInterest": "至少8個字。",
   "starter.failed": "無法產生起步計畫。",
   "starter.level": "你目前處於什麼階段？",
   "starter.level.none": "沒有相關經歷",

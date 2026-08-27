@@ -4877,6 +4877,12 @@ select {
 .starter-planner textarea {
   min-height: 90px;
 }
+.starter-interest-minimum {
+  margin: -2px 0 14px;
+  color: #a96416;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
 .starter-questions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
