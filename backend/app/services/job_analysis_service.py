@@ -6,42 +6,8 @@ import re
 
 from app.models.experience import Experience
 from app.models.job import Job
-from app.schemas.job import Evidence, MatchReport
-
-
-KNOWN_SKILLS = [
-    "Python",
-    "SQL",
-    "TypeScript",
-    "JavaScript",
-    "React",
-    "FastAPI",
-    "PostgreSQL",
-    "PyTorch",
-    "C++",
-    "Docker",
-    "Machine Learning",
-    "Deep Learning",
-    "Transformer",
-    "Pandas",
-    "NumPy",
-    "Git",
-    "RNN",
-    "Reinforcement Learning",
-    "MATLAB",
-    "C",
-    "Statistics",
-    "Probability",
-    "Linear Algebra",
-    "Risk Management",
-    "Quantitative Research",
-    "Market Making",
-    "Algorithms",
-    "Data Structures",
-    "NLP",
-    "Computer Vision",
-    "REST APIs",
-]
+from app.ai.skills import KNOWN_SKILLS
+from app.schemas.job import EligibilityCheck, Evidence, MatchReport
 _STOPWORDS = {
     "the",
     "and",
@@ -64,6 +30,80 @@ _STOPWORDS = {
     "work",
     "years",
 }
+
+_ELIGIBILITY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("work_authorization", ("work authorization", "right to work", "visa", "sponsorship", "工作许可", "签证")),
+    ("location", ("location", "based in", "located in", "工作地点", "地点")),
+    ("graduation", ("graduat", "class of", "expected graduation", "毕业", "预计毕业")),
+    ("education", ("currently enrolled", "undergraduate", "bachelor", "master", "degree", "在读", "本科", "硕士", "学位")),
+    ("availability", ("availability", "available", "internship period", "duration", "weeks", "start date", "可实习", "实习周期", "每周", "开始日期")),
+]
+
+
+def _eligibility_kinds(line: str) -> list[str]:
+    lower = line.casefold()
+    return [
+        kind
+        for kind, terms in _ELIGIBILITY_PATTERNS
+        if any(term in lower for term in terms)
+    ]
+
+
+def _confirmed_eligibility_evidence(
+    kind: str, requirement: str, confirmed: list[Experience]
+) -> Evidence | None:
+    """Only auto-confirm simple, explicit facts; sensitive facts stay manual."""
+    requirement_lower = requirement.casefold()
+    years = set(re.findall(r"\b20\d{2}\b", requirement))
+    for item in confirmed:
+        text = _experience_text(item)
+        lower = text.casefold()
+        matched = False
+        if kind == "education":
+            matched = (
+                (any(word in requirement_lower for word in ("bachelor", "undergraduate", "本科"))
+                 and any(word in lower for word in ("bachelor", "bsc", "undergraduate", "本科")))
+                or (any(word in requirement_lower for word in ("master", "硕士"))
+                    and any(word in lower for word in ("master", "msc", "硕士")))
+            )
+        elif kind == "graduation" and years:
+            matched = bool(years & set(re.findall(r"\b20\d{2}\b", text)))
+        elif kind == "location":
+            locations = ("hong kong", "singapore", "london", "new york", "shanghai", "beijing", "香港", "上海", "北京")
+            matched = any(place in requirement_lower and place in lower for place in locations)
+
+        if matched:
+            return Evidence(
+                requirement=requirement,
+                experience_id=item.id,
+                experience_title=item.title,
+                evidence=_evidence_quote(item, requirement),
+            )
+    return None
+
+
+def build_eligibility_checks(job: Job, confirmed: list[Experience]) -> list[EligibilityCheck]:
+    """Extract hard constraints separately from the skill-match score."""
+    source_lines = [*job.qualifications, *job.description.splitlines()]
+    checks: list[EligibilityCheck] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_line in source_lines:
+        requirement = re.sub(r"\s+", " ", raw_line.strip(" -•●▪\t"))
+        for kind in _eligibility_kinds(requirement):
+            key = (kind, requirement.casefold())
+            if not requirement or key in seen:
+                continue
+            seen.add(key)
+            evidence = _confirmed_eligibility_evidence(kind, requirement, confirmed)
+            checks.append(
+                EligibilityCheck(
+                    kind=kind,
+                    requirement=requirement,
+                    status="met" if evidence else "needs_confirmation",
+                    evidence=evidence.evidence if evidence else "",
+                )
+            )
+    return checks[:8]
 
 
 def _contains(text: str, phrase: str) -> bool:
@@ -247,7 +287,14 @@ def _relevance_score(job: Job, confirmed: list[Experience]) -> int:
 
         values.append(min(overlap / max(len(job_tokens), 1), 1.0))
 
-    return round(max(values, default=0) * 25)
+    # Use the best small set of records rather than a single record or every
+    # record. A single maximum hides whether the applicant has more than one
+    # relevant example; averaging every confirmed record unfairly penalises a
+    # student who has also recorded unrelated clubs or coursework.
+    top_values = sorted((value for value in values if value > 0), reverse=True)[:3]
+    if not top_values:
+        return 0
+    return round(sum(top_values) / len(top_values) * 25)
 
 
 def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
@@ -289,7 +336,6 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
         "experience_relevance": _relevance_score(job, confirmed),
         "quantified_evidence": quantified * 15,
         "education_background": education,
-        "qualification_coverage": 0,
     }
 
     warnings: list[str] = []
@@ -313,6 +359,7 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
         matched_preferred_skills=matched_preferred,
         missing_preferred_skills=missing_preferred,
         score_breakdown=breakdown,
+        eligibility_checks=build_eligibility_checks(job, confirmed),
         warnings=warnings,
     )
 

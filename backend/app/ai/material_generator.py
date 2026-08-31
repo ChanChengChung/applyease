@@ -304,6 +304,20 @@ def _safe(
         except ProviderError as exc:
             result = fallback_call()
 
+            # The fallback must never pass silently as if it were AI output.
+            # Surfaces in the UI (warnings list) that the AI attempt failed
+            # validation/connectivity and a deterministic template was used.
+            result = result.model_copy(
+                update={
+                    "warnings": [
+                        *result.warnings,
+                        "AI 生成未通过证据校验或模型不可用，已回退到确定性模板。"
+                        " / AI generation failed validation or was unavailable; "
+                        "a deterministic template was used instead.",
+                    ]
+                }
+            )
+
             record_outcome(
                 status="rule_fallback",
                 provider="rules",

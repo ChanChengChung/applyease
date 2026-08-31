@@ -1,29 +1,15 @@
 import re
 
-KNOWN_SKILLS = [
-    "Python",
-    "SQL",
-    "TypeScript",
-    "JavaScript",
-    "React",
-    "FastAPI",
-    "PostgreSQL",
-    "PyTorch",
-    "C++",
-    "Docker",
-    "Machine Learning",
-    "Deep Learning",
-    "Transformer",
-    "Pandas",
-    "NumPy",
-    "Git",
-    "RNN",
-    "Reinforcement Learning",
-    "MATLAB",
-    "C",
-]
+from app.ai.skills import KNOWN_SKILLS
+
 SECTION_RE = re.compile(
-    r"^(PERSONAL SKILLS|EDUCATION|ENTREPRENEURSHIP.*|.*WORK(?:ING)? EXPERIENCE|(?:WORK|INTERNSHIP|EMPLOYMENT).*|QUANT INSIGHT EXPERIENCE|RESEARCH EXPERIENCE|LEADERSHIP.*|PROJECTS?|COMPETITION.*|ACTIVITIES|EXTRACURRICULAR.*|VOLUNTEER.*)\s*$",
+    r"^(PERSONAL SKILLS|SKILLS?.*|EDUCATION.*|ENTREPRENEURSHIP.*|"
+    r".*WORK(?:ING)? EXPERIENCE|(?:WORK|INTERNSHIP|EMPLOYMENT|PROFESSIONAL|CAREER|RESEARCH|PROJECT|EXPERIENCE).*|"
+    r"QUANT INSIGHT EXPERIENCE|RESEARCH EXPERIENCE|LEADERSHIP.*|PROJECTS?|COMPETITION.*|ACTIVITIES|EXTRACURRICULAR.*|VOLUNTEER.*|"
+    # 简体中文
+    r"工作经历|实习与工作经历|实习经历|职业经历|项目经历|项目经验|研究经历|科研经历|教育经历|教育背景|竞赛.*|获奖.*|志愿.*|课外活动.*|"
+    # 繁体中文
+    r"工作經歷|實習與工作經歷|實習經歷|職業經歷|專案經歷|專案經驗|專題研究|專題.*|研究經歷|科研經歷|教育經歷|學歷|競賽.*|獲獎.*|志願.*|課外活動.*|社群.*|社團.*)\s*$",
     re.I,
 )
 DATE_RE = re.compile(r"(?:\d{2}/\d{4}|\d{4}\s*[–-]\s*\d{2}/\d{4}|\bpresent\b|\bexpected\b)", re.I)
@@ -47,16 +33,22 @@ def _skills(text: str) -> list[str]:
 
 def _category_for_section(section: str) -> str:
     section = section.casefold()
-    if "education" in section:
+    if "education" in section or "教育" in section:
         return "education"
-    if "research" in section:
+    if "research" in section or "研究" in section or "科研" in section:
         return "research"
     if any(
         word in section
-        for word in ("leadership", "entrepreneurship", "activities", "extracurricular", "volunteer")
+        for word in ("leadership", "entrepreneurship", "activities", "extracurricular", "volunteer",
+                     "领导", "社团", "志愿", "活动", "領導", "社團", "志願", "活動")
     ):
         return "leadership"
-    if any(word in section for word in ("work", "internship", "employment", "quant insight")):
+    if any(
+        word in section
+        for word in ("work", "internship", "employment", "professional", "career", "quant insight",
+                     "work experience", "professional experience", "career experience",
+                     "工作", "实习", "职业", "實習", "職業")
+    ):
         return "internship"
     return "project"
 
@@ -135,6 +127,7 @@ def _split_section(section: str, lines: list[str], source_file: str) -> list[dic
         # If a company/course name is immediately before a dated role line, retain it as organization.
 
         organization = ""
+        title = ""
 
         if "|" in dated:
             pipe_parts = [part.strip() for part in dated.split("|")]
@@ -143,6 +136,11 @@ def _split_section(section: str, lines: list[str], source_file: str) -> list[dic
                 organization = re.split(r",\s*(?:Supervisor|supervised)\s*:", pipe_parts[1])[
                     0
                 ].strip()
+            # "Software Engineer | Example Corp | 06/2024 - 08/2024": the
+            # leading segment is the role, not a date-only label.
+            role = DATE_RE.sub("", pipe_parts[0]).strip(" |,-–\t")
+            if len(role) >= 3:
+                title = re.sub(r"\s{2,}", " ", role)
 
         elif (
             start > 0
@@ -153,7 +151,27 @@ def _split_section(section: str, lines: list[str], source_file: str) -> list[dic
 
             if len(previous) < 120 and not re.match(r"^(of|and|to|the)\b", previous, re.I):
                 organization = previous
-        title = dated
+                # Common "Role | Company" line above the dates: use the role
+                # as the record title instead of the bare date range, and the
+                # company as the organization.
+                if "|" in previous:
+                    role = DATE_RE.sub("", previous.split("|")[0]).strip(" |,-–\t")
+                    if len(role) >= 3:
+                        title = re.sub(r"\s{2,}", " ", role)
+                    company = previous.split("|", 1)[1].strip()
+                    if company:
+                        organization = re.split(
+                            r",\s*(?:Supervisor|supervised)\s*:", company
+                        )[0].strip()
+        if not title:
+            # A dated heading such as "Analyst Intern, 06/2025 - 08/2025"
+            # reads better without the dates.  If the line is ONLY a date the
+            # original heading is kept so the record never loses its only
+            # label.
+            stripped_title = DATE_RE.sub("", dated).strip(" |,-–\t")
+            title = (
+                re.sub(r"\s{2,}", " ", stripped_title) if len(stripped_title) >= 3 else dated
+            )
 
         body_start = start + 1
 
@@ -185,7 +203,10 @@ def extract_experiences(text: str, source_file: str) -> list[dict]:
     for line in raw:
         match = SECTION_RE.match(line)
 
-        if match:
+        # A heading never carries dates.  Without this guard the broadened
+        # prefixes (RESEARCH/PROJECT/EXPERIENCE...) would swallow content
+        # lines such as "Research Assistant, 06/2024 - 08/2024".
+        if match and not DATE_RE.search(line):
 
             if bucket:
                 sections.append((current, bucket))
@@ -205,7 +226,16 @@ def extract_experiences(text: str, source_file: str) -> list[dict]:
     for section, lines in sections:
 
         if section == "GENERAL":
-
+            # A CV whose headings did not match any known section may still
+            # hold dated entries (e.g. a Chinese CV or an unusual heading such
+            # as "PROFESSIONAL EXPERIENCE" before the regex was broadened).
+            # Keep that evidence instead of silently dropping it; fully
+            # undated GENERAL content still falls through to the single
+            # "Uncategorized Experience" record below.
+            if any(DATE_RE.search(line) for line in lines):
+                records.extend(
+                    _split_section("EXPERIENCE", lines, source_file)
+                )
             continue
         records.extend(_split_section(section, lines, source_file))
 

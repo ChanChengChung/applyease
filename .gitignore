@@ -19,3 +19,8 @@ tmp/
 output/
 ApplyEase Project Write.docx
 MEMORY_HANDOFF.md
+
+# Python bytecode / pytest cache (any depth)
+**/__pycache__/
+*.pyc
+.pytest_cache/
