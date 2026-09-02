@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   detectScreenshot: vi.fn(),
   getLatestApplication: vi.fn(),
   getSavedAnswers: vi.fn(),
+  getBatchGenerationTask: vi.fn(),
   generateQuestionAnswer: vi.fn(),
   generateAllAnswers: vi.fn(),
   updateQuestionAnswer: vi.fn(),
@@ -82,7 +83,14 @@ describe("ApplicationFormPage", () => {
       new Error("No saved application"),
     );
     api.getSavedAnswers.mockResolvedValue([]);
-    api.generateAllAnswers.mockResolvedValue(results);
+    api.generateAllAnswers.mockResolvedValue({
+      task_id: "task-1",
+      status: "completed",
+      completed: 2,
+      total: 2,
+      results,
+      errors: [],
+    });
   });
 
   it("detects fields and batch-generates only answerable results", async () => {

@@ -28,6 +28,24 @@ The Chinese University of Hong Kong
     assert "GitHub: github.com/chenzhengzhong" in result["description"]
 
 
+def test_extracts_a_labelled_name_without_repeating_the_label():
+    result = extract_personal_information(
+        """Name: Chen Zhengzhong
+Email: chen.zhengzhong@example.com
+Phone: +852 1234 5678
+
+EDUCATION
+Example University
+""",
+        "cv.pdf",
+    )
+
+    assert result is not None
+    assert result["title"] == "Chen Zhengzhong"
+    assert "Name: Chen Zhengzhong" in result["description"]
+    assert "Name: Name:" not in result["description"]
+
+
 def test_does_not_invent_personal_details_when_contact_block_is_missing():
     result = extract_personal_information(
         """EDUCATION
@@ -38,6 +56,22 @@ BSc in Mathematics
     )
 
     assert result is None
+
+
+def test_does_not_mistake_degree_description_for_a_name():
+    result = extract_personal_information(
+        """Computer Science Student
+student@example.com | +852 1234 5678
+
+EDUCATION
+Example University
+""",
+        "cv.pdf",
+    )
+
+    assert result is not None
+    assert result["title"] == "Personal information"
+    assert "Name: Computer Science Student" not in result["description"]
 
 
 def test_extracts_conventional_unlabelled_cv_header_address():

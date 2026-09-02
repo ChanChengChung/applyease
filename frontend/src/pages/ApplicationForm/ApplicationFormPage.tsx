@@ -4,6 +4,7 @@ import { PageFeedback } from "../../components/PageFeedback";
 import {
   detectQuestions,
   detectScreenshot,
+  getBatchGenerationTask,
   getLatestApplication,
   getSavedAnswers,
   generateAllAnswers,
@@ -49,6 +50,7 @@ export function ApplicationFormPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [batchTemplate, setBatchTemplate] = useState<AnswerTemplate>("auto");
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
   const [questionTemplates, setQuestionTemplates] = useState<
     Record<number, AnswerTemplate>
   >({});
@@ -182,20 +184,31 @@ export function ApplicationFormPage({
     setBusy(true);
     setError("");
     try {
-      const results = await generateAllAnswers(
+      const task = await generateAllAnswers(
         application.id,
         regenerate,
         batchTemplate,
         language,
       );
+      setBatchProgress({ completed: task.completed, total: task.total });
+      let latest = task;
+      while (latest.status === "queued" || latest.status === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+        latest = await getBatchGenerationTask(latest.task_id);
+        setBatchProgress({ completed: latest.completed, total: latest.total });
+      }
       setAnswers(
         Object.fromEntries(
-          results.map((result) => [result.question_id, result]),
+          latest.results.map((result) => [result.question_id, result]),
         ),
       );
+      if (latest.status === "failed" || latest.errors.length) {
+        setError(latest.errors.join(" ") || t("form.batchFailed"));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("form.batchFailed"));
     } finally {
+      setBatchProgress(null);
       setBusy(false);
     }
   };
@@ -353,6 +366,11 @@ export function ApplicationFormPage({
                 </button>
               </div>
             </div>
+            {batchProgress && (
+              <p className="privacy-note" role="status">
+                {batchProgress.completed}/{batchProgress.total} {t("form.processing")}
+              </p>
+            )}
             {application.questions.map((question) => (
               <ApplicationQuestionCard
                 key={question.id}

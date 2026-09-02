@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.schemas.job import (
     JobAnalyzeRequest,
     JobImportDraft,
     JobImportUrlRequest,
+    ManualJobBriefRequest,
     JobRead,
     JobSaveAnalyzedRequest,
     MatchReport,
@@ -29,6 +32,7 @@ from app.services.job_import_service import (
     validate_public_job_url,
 )
 from app.services.application_readiness_service import build_application_readiness
+from app.services.manual_job_brief_service import build_manual_analysis_request
 from app.api.v1.ai_quota import reserve_ai_generation, reserve_cloud_ocr, reserve_job_import
 
 router = APIRouter()
@@ -114,7 +118,9 @@ async def import_screenshot(
         reserve_cloud_ocr(db)
 
         with ai_user_scope(db.info.get("current_user_id")):
-            raw_text = extract_screenshot_text(content, mime_type)
+            # OCR calls an external provider synchronously; keep the async
+            # request handler responsive while it is in flight.
+            raw_text = await asyncio.to_thread(extract_screenshot_text, content, mime_type)
 
         return draft_from_text(raw_text)
 
@@ -166,6 +172,32 @@ def analyze_job_preview(payload: JobAnalyzeRequest, db: Session = Depends(get_db
         )
 
 
+@router.post("/analyze-manual-preview", response_model=MatchReport)
+def analyze_manual_job_preview(payload: ManualJobBriefRequest, db: Session = Depends(get_db)):
+    """Analyse a structured manual role brief without persisting a job yet."""
+    analysis_payload = build_manual_analysis_request(payload)
+    if settings.ai_job_analysis_enabled:
+        reserve_ai_generation(db)
+    with ai_user_scope(db.info.get("current_user_id")):
+        requirements = analyze_job_requirements(
+            analysis_payload.description, ai_enabled=settings.ai_job_analysis_enabled
+        )
+        preview = Job(
+            id=0,
+            user_id=db.info.get("current_user_id"),
+            **analysis_payload.model_dump(),
+            **requirements,
+            created_at=datetime.now(timezone.utc),
+        )
+        return match_job(
+            preview,
+            experience_crud.list_all(db),
+            ai_enabled=settings.ai_job_analysis_enabled,
+            db=db,
+            user_id=db.info.get("current_user_id"),
+        )
+
+
 @router.post("/save-analyzed", response_model=JobRead)
 def save_analyzed_job(payload: JobSaveAnalyzedRequest, db: Session = Depends(get_db)):
     """Persist an analysis only after the user elects to open a workspace."""
@@ -199,14 +231,11 @@ def get_match_report(job_id: int, db: Session = Depends(get_db)):
     experiences = experience_crud.list_all(db)
     user_id = db.info.get("current_user_id")
 
-    if settings.ai_job_analysis_enabled:
-        reserve_ai_generation(db)
-
-    with ai_user_scope(user_id):
-
-        return match_job(
-            job, experiences, ai_enabled=settings.ai_job_analysis_enabled, db=db, user_id=user_id
-        )
+    # This endpoint is fetched automatically whenever a saved role is opened.
+    # Keep it deterministic and quota-free: requirements may have been AI
+    # extracted when the role was imported, but viewing the evidence report
+    # must never silently consume another model request.
+    return match_job(job, experiences, ai_enabled=False, db=db, user_id=user_id)
 
 
 @router.get("/{job_id}/readiness", response_model=ApplicationReadiness)

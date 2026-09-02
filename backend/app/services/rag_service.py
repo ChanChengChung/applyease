@@ -210,8 +210,11 @@ def _milvus_search(
         return []
     client = MilvusClient(uri=settings.milvus_uri)
     collection = _collection_name()
-    dimension = len(ollama_embed(passages[0][1]))
     if not client.has_collection(collection):
+        # The dimension is only needed when the collection is first created.
+        # Previously this call, plus one call for every passage below, ran on
+        # every retrieval even though most user evidence had not changed.
+        dimension = len(ollama_embed(passages[0][1]))
         schema = client.create_schema(auto_id=False, enable_dynamic_field=False)
         schema.add_field("id", DataType.INT64, is_primary=True)
         schema.add_field("user_id", DataType.INT64)
@@ -232,23 +235,31 @@ def _milvus_search(
     tenant_filter = f"user_id == {int(user_id)}"
     existing = client.query(collection, filter=tenant_filter, output_fields=["id"], limit=16384)
     known = {item["id"] for item in existing}
-    records = [
+    passage_by_id = {
+        _passage_id(user_id, label, text): (label, text) for label, text in passages
+    }
+    candidate_records = [
         {
-            "id": _passage_id(user_id, label, text),
+            "id": passage_id,
             "user_id": user_id,
             "label": _milvus_label(label),
-            "vector": ollama_embed(text),
         }
-        for label, text in passages
+        for passage_id, (label, _text) in passage_by_id.items()
     ]
-    current_ids = {record["id"] for record in records}
+    current_ids = {record["id"] for record in candidate_records}
     stale_ids = known - current_ids
     if stale_ids:
         client.delete(collection, ids=list(stale_ids))
-    # Upsert keeps a stable, current tenant index even when an experience is
-    # edited; plain insert previously left stale vectors behind indefinitely.
-    if records:
-        client.upsert(collection, records)
+    # An edited passage gets a new content-derived ID, so only passages absent
+    # from the tenant index need embedding and upsert. This makes steady-state
+    # retrieval one query embedding instead of N evidence embeddings.
+    new_records = [record for record in candidate_records if record["id"] not in known]
+    if new_records:
+        for record in new_records:
+            record["vector"] = ollama_embed(passage_by_id[record["id"]][1])
+        # Upsert keeps a stable, current tenant index even when an experience
+        # is edited; plain insert previously left stale vectors behind.
+        client.upsert(collection, new_records)
         # Make the just-written evidence visible to the immediately following
         # search. Without this, first-use requests can observe an empty index
         # until Milvus performs its asynchronous flush.

@@ -1,3 +1,4 @@
+import asyncio
 from hashlib import sha256
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -17,17 +18,19 @@ router = APIRouter()
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 
-def _extract_experience_values(db: Session, text: str, filename: str) -> list[dict]:
+async def _extract_experience_values(db: Session, text: str, filename: str) -> list[dict]:
     if settings.ai_extraction_enabled:
         reserve_ai_generation(db)
         with ai_user_scope(db.info.get("current_user_id")):
-            extracted, _extraction_mode = extract_experiences_safe(text, filename)
+            extracted, _extraction_mode = await asyncio.to_thread(
+                extract_experiences_safe, text, filename
+            )
     else:
         from app.ai.mock_extractor import extract_experiences
 
-        extracted = extract_experiences(text, filename)
+        extracted = await asyncio.to_thread(extract_experiences, text, filename)
 
-    personal = extract_personal_information(text, filename)
+    personal = await asyncio.to_thread(extract_personal_information, text, filename)
     if personal:
         extracted.insert(0, personal)
     return extracted
@@ -57,7 +60,8 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
 
     if existing:
         try:
-            duplicate_text = extract_text(
+            duplicate_text = await asyncio.to_thread(
+                extract_text,
                 file.filename,
                 content,
                 max_pdf_pages=settings.max_document_pages,
@@ -68,7 +72,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             # reparsing it. Always extract again so partial or complete evidence
             # deletion can be repaired. The CRUD layer de-duplicates cards that
             # are still present.
-            extracted = _extract_experience_values(db, duplicate_text, file.filename)
+            extracted = await _extract_experience_values(db, duplicate_text, file.filename)
             records, restored = document_crud.restore_missing_experiences(
                 db, existing, extracted
             )
@@ -95,7 +99,8 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         }
 
     try:
-        text = extract_text(
+        text = await asyncio.to_thread(
+            extract_text,
             file.filename,
             content,
             max_pdf_pages=settings.max_document_pages,
@@ -103,7 +108,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             max_docx_uncompressed_bytes=settings.max_docx_uncompressed_bytes,
         )
 
-        extracted = _extract_experience_values(db, text, file.filename)
+        extracted = await _extract_experience_values(db, text, file.filename)
 
     except ValueError as exc:
 

@@ -89,9 +89,13 @@ def validate_material_text(
 
     warnings: list[str] = []
 
-    for number in dict.fromkeys(re.findall(r"(?<!\w)\d+(?:[.,]\d+)*(?:%|\+)?", text)):
-
-        if _normalize(number) not in evidence:
+    number_pattern = r"(?<!\w)\d+(?:[.,]\d+)*(?:%|\+)?"
+    # Compare whole numeric tokens instead of using a substring search: the
+    # previous check considered "10" supported whenever evidence contained
+    # "100", which undermined the fact-check badge.
+    evidence_numbers = {_normalize(number) for number in re.findall(number_pattern, evidence)}
+    for number in dict.fromkeys(re.findall(number_pattern, text)):
+        if _normalize(number) not in evidence_numbers:
             if language == "en":
                 warnings.append(
                     f"Number {number} is not supported by the job posting or confirmed experience"

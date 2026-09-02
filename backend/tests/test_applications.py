@@ -125,8 +125,12 @@ def test_answer_template_validation_and_batch_template_selection():
         f"/api/v1/applications/{application['id']}/answers/generate-all",
         json={"regenerate": True, "template": "standard_150"},
     )
-    assert generated.status_code == 200
-    assert generated.json()[0]["template"] == "standard_150"
+    assert generated.status_code == 202
+    task = client.get(
+        f"/api/v1/applications/batch-tasks/{generated.json()['task_id']}"
+    ).json()
+    assert task["status"] in {"completed", "completed_with_errors"}
+    assert task["results"][0]["template"] == "standard_150"
 
 
 def test_batch_generation_skips_sensitive_fields_and_saves_manual_answers():
@@ -147,9 +151,12 @@ def test_batch_generation_skips_sensitive_fields_and_saves_manual_answers():
         f"/api/v1/applications/{application['id']}/answers/generate-all", json={"regenerate": False}
     )
 
-    assert results.status_code == 200
+    assert results.status_code == 202
 
-    statuses = {item["question"]: item["status"] for item in results.json()}
+    task = client.get(
+        f"/api/v1/applications/batch-tasks/{results.json()['task_id']}"
+    ).json()
+    statuses = {item["question"]: item["status"] for item in task["results"]}
 
     assert statuses["Work authorization *"] == "manual_required"
 

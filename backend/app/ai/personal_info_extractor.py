@@ -12,6 +12,7 @@ import re
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d() .-]{6,}\d)(?!\w)")
 URL_RE = re.compile(r"(?:https?://)?(?:www\.)?(?:linkedin\.com|github\.com)/[^\s|,;]+", re.I)
+NAME_RE = re.compile(r"^(?:name|full\s+name|姓名|名字)\s*[:：-]\s*(.+)$", re.I)
 ADDRESS_RE = re.compile(r"^(?:address|地址|住址)\s*[:：-]\s*(.+)$", re.I)
 EXPLICIT_LOCATION_RE = re.compile(r"^(?:location|based in|所在地|地点|地點)\s*[:：-]\s*(.+)$", re.I)
 LOCATION_RE = re.compile(r"\b(?:hong kong(?: sar)?|kowloon|new territories|singapore|shanghai|beijing|london|new york|tokyo|sydney|vancouver|toronto)\b", re.I)
@@ -20,6 +21,10 @@ ADDRESS_HINT_RE = re.compile(
     re.I,
 )
 HEADING_RE = re.compile(r"^(?:education|experience|work experience|research experience|projects?|skills?|leadership|activities|contact|personal information)$", re.I)
+NON_NAME_TERMS = {
+    "student", "undergraduate", "graduate", "bachelor", "master", "phd",
+    "computer", "science", "engineering", "mathematics", "curriculum", "vitae",
+}
 
 
 def _clean(value: str) -> str:
@@ -29,12 +34,21 @@ def _clean(value: str) -> str:
 def _candidate_name(lines: list[str]) -> str:
     for raw in lines[:8]:
         line = _clean(raw)
-        if not line or len(line) > 80 or "@" in line or URL_RE.search(line):
+        if not line or len(line) > 80 or "@" in line or URL_RE.search(line) or NAME_RE.match(line):
             continue
-        if PHONE_RE.search(line) or HEADING_RE.match(line):
+        if PHONE_RE.search(line):
             continue
+        # A contact header ends at the first CV section. Do not scan through
+        # EDUCATION and accidentally promote a university to the user's name.
+        if HEADING_RE.match(line):
+            break
         words = re.findall(r"[A-Za-z][A-Za-z'’-]*|[\u4e00-\u9fff]{2,4}", line)
-        if 2 <= len(words) <= 5 and not LOCATION_RE.search(line):
+        normalized_words = {word.casefold() for word in words}
+        if (
+            2 <= len(words) <= 5
+            and not LOCATION_RE.search(line)
+            and not (normalized_words & NON_NAME_TERMS)
+        ):
             return line
     return ""
 
@@ -71,7 +85,8 @@ def extract_personal_information(text: str, source_file: str) -> dict | None:
     lines = [_clean(line) for line in text.splitlines() if _clean(line)]
     header = "\n".join(lines[:18])
     details: list[str] = []
-    name = _candidate_name(lines)
+    explicit_name = next((NAME_RE.match(line) for line in lines[:18] if NAME_RE.match(line)), None)
+    name = _clean(explicit_name.group(1)) if explicit_name else _candidate_name(lines)
     if name:
         details.append(f"Name: {name}")
     email = EMAIL_RE.search(header)

@@ -108,6 +108,17 @@ class BatchAnswerRequest(BaseModel):
     desired_content: str = Field(default="", max_length=1000)
 
 
+class BatchGenerationTask(BaseModel):
+    """A pollable, short-lived batch-answer job for the application editor."""
+
+    task_id: str
+    status: Literal["queued", "running", "completed", "completed_with_errors", "failed"]
+    completed: int = 0
+    total: int = 0
+    results: list[AnswerRead] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class AnswerUpdate(BaseModel):
     answer: str = Field(min_length=1, max_length=5000)
 

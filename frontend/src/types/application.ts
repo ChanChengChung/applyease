@@ -53,3 +53,12 @@ export type GeneratedAnswer = {
   template_target_characters?: number | null;
   structure_warnings?: string[];
 };
+
+export type BatchGenerationTask = {
+  task_id: string;
+  status: "queued" | "running" | "completed" | "completed_with_errors" | "failed";
+  completed: number;
+  total: number;
+  results: GeneratedAnswer[];
+  errors: string[];
+};

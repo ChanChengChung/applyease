@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import asyncio
+from threading import Lock
+from uuid import uuid4
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.ai.providers import ProviderError
@@ -6,13 +10,14 @@ from app.config import settings
 from app.crud import application as application_crud
 from app.crud import experience as experience_crud
 from app.crud import job as job_crud
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.schemas.application import (
     AnswerGenerationRequest,
     AnswerRead,
     AnswerUpdate,
     ApplicationRead,
     BatchAnswerRequest,
+    BatchGenerationTask,
     DetectedFormField,
     DetectQuestionsRequest,
     FillPreviewRequest,
@@ -39,6 +44,19 @@ from app.api.v1.ai_quota import reserve_ai_generation, reserve_cloud_ocr
 
 router = APIRouter()
 SCREENSHOT_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+# BackgroundTasks runs in the same application process, so this intentionally
+# holds only short-lived UI progress rather than source-of-truth application
+# data. Generated answers are persisted through the normal CRUD path; if the
+# server restarts the client can simply reload those saved answers.
+_BATCH_TASKS: dict[str, dict] = {}
+_BATCH_TASKS_LOCK = Lock()
+
+
+def _task_snapshot(task_id: str) -> BatchGenerationTask | None:
+    with _BATCH_TASKS_LOCK:
+        state = _BATCH_TASKS.get(task_id)
+        return BatchGenerationTask(**state) if state else None
 
 
 def _valid_image_signature(data: bytes, mime_type: str) -> bool:
@@ -276,7 +294,9 @@ async def detect_screenshot(
         reserve_cloud_ocr(db)
 
         with ai_user_scope(db.info.get("current_user_id")):
-            raw_text = extract_screenshot_text(content, mime_type)
+            # Provider OCR is synchronous I/O. Offload it so an upload does
+            # not stall the event loop serving unrelated API requests.
+            raw_text = await asyncio.to_thread(extract_screenshot_text, content, mime_type)
 
             if settings.ai_application_form_enabled:
                 reserve_ai_generation(db)
@@ -341,33 +361,99 @@ def answer(
     )
 
 
-@router.post("/{application_id}/answers/generate-all", response_model=list[AnswerRead])
-def generate_all(application_id: int, payload: BatchAnswerRequest, db: Session = Depends(get_db)):
-    application = application_crud.get(db, application_id)
+def _run_batch_generation(
+    task_id: str, application_id: int, user_id: int, payload: BatchAnswerRequest
+) -> None:
+    """Generate one form at a time after the HTTP response has been returned."""
+    with _BATCH_TASKS_LOCK:
+        _BATCH_TASKS[task_id]["status"] = "running"
 
+    db = SessionLocal()
+    db.info["current_user_id"] = user_id
+    try:
+        application = application_crud.get(db, application_id)
+        if not application:
+            raise RuntimeError("Application no longer exists")
+        questions = application_crud.list_questions(db, application_id)
+        for question in questions:
+            try:
+                stored = _stored_result(question)
+                result = (
+                    stored
+                    if stored and not payload.regenerate
+                    else _generate(
+                        application,
+                        question,
+                        db,
+                        payload.template,
+                        payload.output_language,
+                        payload.answer_tone,
+                        payload.desired_content,
+                    )
+                )
+                with _BATCH_TASKS_LOCK:
+                    _BATCH_TASKS[task_id]["results"].append(result)
+            except Exception as exc:  # Preserve other answers if one provider call fails.
+                with _BATCH_TASKS_LOCK:
+                    _BATCH_TASKS[task_id]["errors"].append(
+                        f"Question {question.id}: {str(exc) or 'generation failed'}"
+                    )
+            finally:
+                with _BATCH_TASKS_LOCK:
+                    _BATCH_TASKS[task_id]["completed"] += 1
+        with _BATCH_TASKS_LOCK:
+            _BATCH_TASKS[task_id]["status"] = (
+                "completed_with_errors" if _BATCH_TASKS[task_id]["errors"] else "completed"
+            )
+    except Exception as exc:
+        with _BATCH_TASKS_LOCK:
+            _BATCH_TASKS[task_id]["status"] = "failed"
+            _BATCH_TASKS[task_id]["errors"].append(str(exc) or "Batch generation failed")
+    finally:
+        db.close()
+
+
+@router.post(
+    "/{application_id}/answers/generate-all", response_model=BatchGenerationTask, status_code=202
+)
+def generate_all(
+    application_id: int,
+    payload: BatchAnswerRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    application = application_crud.get(db, application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    results: list[dict] = []
+    task_id = str(uuid4())
+    user_id = int(db.info.get("current_user_id") or application.user_id)
+    with _BATCH_TASKS_LOCK:
+        _BATCH_TASKS[task_id] = {
+            "task_id": task_id,
+            "user_id": user_id,
+            "status": "queued",
+            "completed": 0,
+            "total": len(application_crud.list_questions(db, application_id)),
+            "results": [],
+            "errors": [],
+        }
+    background_tasks.add_task(_run_batch_generation, task_id, application_id, user_id, payload)
+    return _task_snapshot(task_id)
 
-    for question in application_crud.list_questions(db, application_id):
-        stored = _stored_result(question)
 
-        results.append(
-            stored
-            if stored and not payload.regenerate
-            else _generate(
-                application,
-                question,
-                db,
-                payload.template,
-                payload.output_language,
-                payload.answer_tone,
-                payload.desired_content,
-            )
-        )
-
-    return results
+@router.get("/batch-tasks/{task_id}", response_model=BatchGenerationTask)
+def get_batch_generation_task(task_id: str, db: Session = Depends(get_db)):
+    task = _task_snapshot(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Batch generation task not found")
+    # Task IDs are unguessable, but this is still an ownership check rather
+    # than relying on UUID secrecy alone.
+    with _BATCH_TASKS_LOCK:
+        expected_user_id = _BATCH_TASKS.get(task_id, {}).get("user_id")
+    if expected_user_id != db.info.get("current_user_id"):
+        raise HTTPException(status_code=404, detail="Batch generation task not found")
+    return task
 
 
 @router.post("/{application_id}/fill-preview", response_model=FillPreviewResponse)

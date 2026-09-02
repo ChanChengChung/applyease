@@ -1,6 +1,7 @@
 import type {
   AnswerTemplate,
   Application,
+  BatchGenerationTask,
   GeneratedAnswer,
 } from "../types/application";
 import { request } from "./request";
@@ -43,8 +44,8 @@ export async function generateAllAnswers(
   regenerate = false,
   template: AnswerTemplate = "auto",
   outputLanguage: "en" | "zh-CN" | "zh-TW" = "en",
-): Promise<GeneratedAnswer[]> {
-  return request<GeneratedAnswer[]>(
+): Promise<BatchGenerationTask> {
+  return request<BatchGenerationTask>(
     `/applications/${applicationId}/answers/generate-all`,
     {
       method: "POST",
@@ -52,6 +53,9 @@ export async function generateAllAnswers(
       body: JSON.stringify({ regenerate, template, output_language: outputLanguage }),
     },
   );
+}
+export function getBatchGenerationTask(taskId: string): Promise<BatchGenerationTask> {
+  return request<BatchGenerationTask>(`/applications/batch-tasks/${taskId}`);
 }
 export async function updateQuestionAnswer(
   applicationId: number,

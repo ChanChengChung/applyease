@@ -20,6 +20,7 @@ from app.ai.mock_extractor import extract_experiences
 from app.ai.skills import KNOWN_SKILLS
 from app.ai.material_generator import ProviderError, generate_resume_safe
 from app.services.job_analysis_service import build_match_report
+from app.services.material_validation_service import validate_material_text
 from app.models.experience import Experience
 from app.models.job import Job
 
@@ -205,3 +206,12 @@ def test_match_report_relevance_uses_best_three_records_and_dead_dimension_remov
     # Adding many unrelated records must not collapse the role relevance. The
     # score is the average of at most the three most relevant records.
     assert report.score_breakdown["experience_relevance"] >= 8
+
+
+def test_fact_check_compares_whole_numeric_tokens_not_substrings():
+    supported, warnings = validate_material_text(
+        "Improved throughput by 10%.", [], "Improved throughput by 100%."
+    )
+
+    assert supported is False
+    assert any("10" in warning for warning in warnings)
