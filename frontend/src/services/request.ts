@@ -24,12 +24,16 @@ export class ApiRequestError extends Error {
   detail?: string;
 
   constructor(status: number, detail?: string) {
-    // Message is intentionally language-neutral (status + detail only).
-    super(
-      detail
-        ? `Request failed (${status}): ${detail}`
-        : `Request failed (${status})`,
-    );
+    // Keep implementation details (FastAPI exception strings, traces and HTTP
+    // jargon) out of customer-facing UI. `detail` remains available to callers
+    // that need structured handling such as the duplicate-experience dialog.
+    const genericMessage =
+      status === 0
+        ? "Unable to connect to ApplyEase. Check that the local service is running."
+        : status >= 500
+          ? "ApplyEase is temporarily unavailable. Please try again shortly."
+          : "We could not complete this request. Please check your input and try again.";
+    super(status >= 500 || status === 0 ? genericMessage : detail || genericMessage);
     this.name = "ApiRequestError";
     this.status = status;
     this.detail = detail;
@@ -54,7 +58,12 @@ export async function request<T>(
   opts: { expectStatus?: number; parseJson?: boolean } = {},
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${API}${path}`;
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new ApiRequestError(0);
+  }
 
   // Caller may treat a specific status (e.g. 401) as a non-error sentinel.
   if (

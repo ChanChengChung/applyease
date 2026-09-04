@@ -76,14 +76,16 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             records, restored = document_crud.restore_missing_experiences(
                 db, existing, extracted
             )
-            existing.filename = file.filename[:255]
-            existing.content_type = file.content_type or "application/octet-stream"
-            existing.text_length = len(duplicate_text)
-            db.commit()
+            existing = document_crud.update_metadata(
+                db,
+                existing,
+                filename=file.filename,
+                content_type=file.content_type or "application/octet-stream",
+                text_length=len(duplicate_text),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except SQLAlchemyError as exc:
-            db.rollback()
             raise HTTPException(status_code=500, detail="Unable to restore uploaded document") from exc
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Unable to parse document: {exc}") from exc

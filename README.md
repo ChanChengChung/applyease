@@ -26,7 +26,7 @@ This mode is for a **local evaluator demo only**. Do not enter real personal dat
 ### Run locally
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/applyease.git
+git clone https://github.com/ChanChengChung/applyease.git
 cd applyease
 
 # Create local configuration only if it does not already exist.

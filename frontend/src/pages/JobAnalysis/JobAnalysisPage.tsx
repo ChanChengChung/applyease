@@ -349,6 +349,11 @@ export function JobAnalysisPage({
                 ? t("job.recognizing")
                 : t("job.importFromScreenshot")}
             </button>
+            {file && !consent && (
+              <p className="privacy-note" role="status">
+                {t("form.ocrConsentRequired")}
+              </p>
+            )}
           </div>
           {importedDraft ? (
             <section className="card imported-analysis-card" aria-live="polite">

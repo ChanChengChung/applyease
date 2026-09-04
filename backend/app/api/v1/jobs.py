@@ -8,9 +8,6 @@ from app.crud import application as application_crud
 from app.crud import material as material_crud
 from app.db.session import get_db
 from app.crud import job as job_crud
-from datetime import datetime, timezone
-
-from app.models.job import Job
 from app.schemas.job import (
     ApplicationReadiness,
     JobAnalyzeRequest,
@@ -22,7 +19,7 @@ from app.schemas.job import (
     MatchReport,
 )
 from app.config import settings
-from app.services.job_analysis_service import analyze_job_requirements, match_job
+from app.services.job_analysis_service import analyze_job_requirements, build_preview_job, match_job
 from app.ai.observability import ai_user_scope
 from app.ai.providers import ProviderError
 from app.services.application_question_service import extract_screenshot_text
@@ -156,13 +153,7 @@ def analyze_job_preview(payload: JobAnalyzeRequest, db: Session = Depends(get_db
         requirements = analyze_job_requirements(
             payload.description, ai_enabled=settings.ai_job_analysis_enabled
         )
-        preview = Job(
-            id=0,
-            user_id=db.info.get("current_user_id"),
-            **payload.model_dump(),
-            **requirements,
-            created_at=datetime.now(timezone.utc),
-        )
+        preview = build_preview_job(payload, requirements, db.info.get("current_user_id"))
         return match_job(
             preview,
             experience_crud.list_all(db),
@@ -182,12 +173,8 @@ def analyze_manual_job_preview(payload: ManualJobBriefRequest, db: Session = Dep
         requirements = analyze_job_requirements(
             analysis_payload.description, ai_enabled=settings.ai_job_analysis_enabled
         )
-        preview = Job(
-            id=0,
-            user_id=db.info.get("current_user_id"),
-            **analysis_payload.model_dump(),
-            **requirements,
-            created_at=datetime.now(timezone.utc),
+        preview = build_preview_job(
+            analysis_payload, requirements, db.info.get("current_user_id")
         )
         return match_job(
             preview,

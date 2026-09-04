@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from app.models.experience import Experience
 from app.models.job import Job
+from app.schemas.job import JobAnalyzeRequest
 from app.ai.skills import KNOWN_SKILLS
 from app.schemas.job import EligibilityCheck, Evidence, MatchReport
 _STOPWORDS = {
@@ -38,6 +40,19 @@ _ELIGIBILITY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("education", ("currently enrolled", "undergraduate", "bachelor", "master", "degree", "在读", "本科", "硕士", "学位")),
     ("availability", ("availability", "available", "internship period", "duration", "weeks", "start date", "可实习", "实习周期", "每周", "开始日期")),
 ]
+
+
+def build_preview_job(
+    payload: JobAnalyzeRequest, requirements: dict[str, list[str]], user_id: int | None
+) -> Job:
+    """Build the non-persisted job used by preview-only analysis routes."""
+    return Job(
+        id=0,
+        user_id=user_id,
+        **payload.model_dump(),
+        **requirements,
+        created_at=datetime.now(timezone.utc),
+    )
 
 
 def _eligibility_kinds(line: str) -> list[str]:

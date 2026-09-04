@@ -101,3 +101,17 @@ def restore_missing_experiences(
         records = list(document.experiences)
 
     return records, restored
+
+
+def update_metadata(db: Session, document: Document, *, filename: str, content_type: str, text_length: int) -> Document:
+    """Persist duplicate-upload metadata without exposing transaction control to routes."""
+    try:
+        document.filename = filename[:255]
+        document.content_type = content_type or "application/octet-stream"
+        document.text_length = text_length
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception:
+        db.rollback()
+        raise

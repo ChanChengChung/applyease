@@ -318,14 +318,6 @@ export function ApplicationBuilderPage({
     setBusy(true);
     setError("");
     setStepIndex(0);
-    // Advance the visible pipeline step on a cadence so the wait shows progress.
-    const stepTimer = setInterval(
-      () =>
-        setStepIndex((current) =>
-          Math.min(current + 1, GENERATION_STEPS.length - 1),
-        ),
-      700,
-    );
     try {
       const generated =
         kind === "resume"
@@ -337,11 +329,14 @@ export function ApplicationBuilderPage({
                 desiredContent: desiredContent.trim(),
               });
       setMaterial(generated);
+      // These steps advance only after their real corresponding operation, not
+      // on a timer that can reach 100% while an LLM request is still pending.
+      setStepIndex(1);
       await refreshHistory(id);
+      setStepIndex(2);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("builder.genFailed"));
     } finally {
-      clearInterval(stepTimer);
       setStepIndex(-1);
       setBusy(false);
     }

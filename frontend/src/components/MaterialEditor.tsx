@@ -48,6 +48,19 @@ export function MaterialEditor({
     }
   };
 
+  const exportText = () => {
+    const type = material.material_type.replace(/[^a-z0-9]+/gi, "-") || "material";
+    const blob = new Blob([draft], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `ApplyEase-${type}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const overLimit = Boolean(
     material.max_characters && draft.length > material.max_characters,
   );
@@ -96,7 +109,7 @@ export function MaterialEditor({
         ) : (
           <p>
             <small>
-              {t("shared.generationMethod.rule")}：{methodLabel}
+              {t("shared.generationMethod")}：{methodLabel}
             </small>
           </p>
         )}
@@ -142,6 +155,7 @@ export function MaterialEditor({
         <button onClick={() => void copy()}>
           {copied ? t("shared.copied") : t("shared.copy")}
         </button>
+        <button onClick={exportText}>{t("shared.exportText")}</button>
       </div>
     </div>
   );
