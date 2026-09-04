@@ -26,6 +26,12 @@ export type Evidence = {
   experience_title: string;
   evidence: string;
 };
+export type EligibilityCheck = {
+  kind: "education" | "graduation" | "location" | "work_authorization" | "availability";
+  requirement: string;
+  status: "met" | "needs_confirmation";
+  evidence: string;
+};
 export type MatchReport = {
   job: Job;
   overall_score: number;
@@ -41,6 +47,7 @@ export type MatchReport = {
   missing_preferred_skills?: string[];
 
   score_breakdown?: Record<string, number>;
+  eligibility_checks?: EligibilityCheck[];
   warnings?: string[];
 };
 

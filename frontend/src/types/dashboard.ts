@@ -45,6 +45,7 @@ export type DashboardSummary = {
 
   tracker_total: number;
   active_applications: number;
+  urgent_deadlines_count?: number;
   upcoming_deadlines: DashboardDeadline[];
 
   steps: DashboardStep[];

@@ -119,6 +119,7 @@ def test_completed_workflow_shows_linked_tracker_and_upcoming_deadline():
     assert result["steps"][-1]["status"] == "complete"
 
     assert result["upcoming_deadlines"][0]["deadline"] == date(2026, 8, 20)
+    assert result["urgent_deadlines_count"] == 1
 
 
 def test_dashboard_keeps_all_saved_tracker_dates_not_only_the_next_14_days():
@@ -142,6 +143,7 @@ def test_dashboard_keeps_all_saved_tracker_dates_not_only_the_next_14_days():
     ]
     assert result["upcoming_deadlines"][-1]["deadline"] == date(2026, 10, 20)
     assert result["upcoming_deadlines"][0]["job_id"] == 7
+    assert result["urgent_deadlines_count"] == 0
 
 
 def test_dashboard_summary_endpoint_contract():

@@ -37,6 +37,28 @@ def migration_status(engine: Engine) -> dict[str, str | bool | None]:
 def _validate_legacy_schema(engine: Engine) -> None:
     inspector = inspect(engine)
 
+    # Reminder preferences were added after the original user table.  Keep
+    # unversioned local databases adoptable before Alembic is stamped.
+    if "users" in inspector.get_table_names():
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        additions = {
+            "timezone": "VARCHAR(64) NOT NULL DEFAULT 'UTC'",
+            "deadline_reminders_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "deadline_reminder_days": "INTEGER NOT NULL DEFAULT 7",
+            "deadline_reminder_hour": "INTEGER NOT NULL DEFAULT 9",
+        }
+        missing_user_columns = [
+            (name, definition)
+            for name, definition in additions.items()
+            if name not in user_columns
+        ]
+        if missing_user_columns:
+            with engine.begin() as connection:
+                for name, definition in missing_user_columns:
+                    connection.execute(
+                        text(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+                    )
+
     # Legacy databases may predate ownership. Add nullable columns so the
 
     # ownership migration can backfill them without rebuilding user data.
@@ -59,6 +81,20 @@ def _validate_legacy_schema(engine: Engine) -> None:
             }:
                 connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN user_id INTEGER"))
     inspector = inspect(engine)
+
+    # Keep unversioned legacy databases adoptable when newer nullable JSON
+    # fields were introduced after the original MVP schema.
+    if "tracked_applications" in inspector.get_table_names():
+        tracker_columns = {
+            column["name"] for column in inspector.get_columns("tracked_applications")
+        }
+        if "interview_review" not in tracker_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE tracked_applications ADD COLUMN interview_review JSON"
+                    )
+                )
 
     actual_tables = set(inspector.get_table_names())
 

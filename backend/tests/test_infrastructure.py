@@ -104,7 +104,7 @@ def test_empty_database_upgrades_to_head(tmp_path):
 
     assert set(Base.metadata.tables).issubset(inspect(engine).get_table_names())
 
-    assert check_database(url)["current"] == "0022_opportunity_modes"
+    assert check_database(url)["current"] == "0024_deadline_reminders"
 
     engine.dispose()
 

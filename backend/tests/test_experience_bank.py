@@ -155,6 +155,18 @@ def test_edit_and_confirm_experience():
 
     assert result["skills"] == ["Python", "React"]
 
+    # A duplicate-resolution replacement uses this same PATCH path.  Verify it
+    # is persisted by reading the original record back from the API, rather
+    # than only trusting the response returned by the update call.
+    persisted = next(
+        record
+        for record in client.get("/api/v1/experiences").json()
+        if record["id"] == item["id"]
+    )
+    assert persisted["title"] == "Edited title"
+    assert persisted["organization"] == "Edited org"
+    assert persisted["skills"] == ["Python", "React"]
+
 
 def test_delete_experience():
     items = client.get("/api/v1/experiences").json()

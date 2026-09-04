@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -48,3 +50,19 @@ def update_content(db: Session, record: GeneratedMaterial, content: dict):
     db.refresh(record)
 
     return record
+
+
+def create_edit_snapshot(db: Session, record: GeneratedMaterial):
+    """Keep the pre-edit material as a recoverable history version."""
+    snapshot = GeneratedMaterial(
+        user_id=record.user_id,
+        job_id=record.job_id,
+        material_type=record.material_type,
+        content=dict(record.content or {}),
+        # Keep the live edited record newer than its snapshot in history lists.
+        created_at=(record.created_at - timedelta(microseconds=1)) if record.created_at else None,
+    )
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    return snapshot

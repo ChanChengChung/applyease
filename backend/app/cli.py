@@ -56,6 +56,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required for Gemini because evaluation inputs leave this device and consume quota",
     )
+
+    reminders = commands.add_parser("reminders", help="deadline reminder operations")
+    reminder_actions = reminders.add_subparsers(dest="action", required=True)
+    reminder_actions.add_parser(
+        "scan", help="send due deadline reminders once (useful for an explicit smoke test)"
+    )
     evaluate.add_argument(
         "--minimum-pass-rate",
         type=float,
@@ -113,6 +119,11 @@ def main() -> int:
             from app.ai.evaluation import run_evaluation
 
             result = run_evaluation(args.provider)
+
+        elif args.command == "reminders":
+            from app.services.deadline_reminder_service import run_deadline_reminder_scan
+
+            result = {"sent": run_deadline_reminder_scan()}
 
         elif args.command == "auth":
             result = _claim_local(args.email)

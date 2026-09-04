@@ -4,7 +4,7 @@ from app.models.job import Job
 from app.models.material import GeneratedMaterial
 from app.models.application import Application, ApplicationQuestion
 from app.models.resource import LearningResource, ResourceFeedback, ResourceProgress
-from app.models.tracker import TrackedApplication
+from app.models.tracker import DeadlineReminderDelivery, TrackedApplication
 from app.models.user import User
 from app.models.ai_observation import AIInvocation, AIUsageBucket
 from app.models.security import (
@@ -32,6 +32,7 @@ __all__ = [
     "LearningResource",
     "ResourceProgress",
     "TrackedApplication",
+    "DeadlineReminderDelivery",
     "AIInvocation",
     "AIUsageBucket",
     "AuthSession",

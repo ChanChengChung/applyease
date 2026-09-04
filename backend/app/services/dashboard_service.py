@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from app.services.job_analysis_service import build_match_report
 
 
@@ -196,6 +196,11 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
     date_events.sort(key=lambda event: (event[0] < today, event[0]))
 
     upcoming = date_events[:5]
+    urgent_deadlines_count = sum(
+        1
+        for event_date, item, kind in date_events
+        if kind == "deadline" and event_date <= today + timedelta(days=7)
+    )
 
     if not experiences:
         current, action = "profile", (
@@ -290,6 +295,7 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
         "answers_ready": answered,
         "tracker_total": len(tracked),
         "active_applications": sum(1 for item in tracked if item.status in ACTIVE_STATUSES),
+        "urgent_deadlines_count": urgent_deadlines_count,
         "upcoming_deadlines": [
             {
                 "id": item.id,

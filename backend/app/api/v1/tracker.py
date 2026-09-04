@@ -22,6 +22,11 @@ from app.schemas.tracker import (
     TrackerSummary,
     TrackerUpdate,
 )
+from app.schemas.notifications import InterviewReviewCoachRequest
+from app.services.interview_review_service import coach_review
+from app.api.v1.ai_quota import reserve_ai_generation
+from app.config import settings
+from app.auth import utc_now
 from app.services.calendar_service import build_calendar, build_reminders, calendar_filename
 from app.services.tracker_service import build_tracker_summary, serialize_tracker
 from app.services.job_analysis_service import build_match_report
@@ -179,6 +184,38 @@ def update_application(application_id: int, payload: TrackerUpdate, db: Session 
                 )
 
     return serialize_tracker(tracker_crud.update(db, item, values))
+
+
+@router.post("/{application_id}/interview-review/coach", response_model=TrackerRead)
+def coach_interview_review(
+    application_id: int,
+    payload: InterviewReviewCoachRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate grounded coaching and persist it with the interview debrief."""
+    item = tracker_crud.get(db, application_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Tracked application not found")
+    if not payload.has_content():
+        raise HTTPException(status_code=422, detail="Add at least one interview debrief field first")
+
+    if settings.ai_interview_review_enabled:
+        reserve_ai_generation(db)
+
+    review_values = {
+        "questions": payload.questions,
+        "strengths": payload.strengths,
+        "improvements": payload.improvements,
+        "next_steps": payload.next_steps,
+    }
+    feedback = coach_review(
+        db,
+        item,
+        review_values,
+        output_language=payload.output_language,
+    )
+    review_values.update({"completed_at": utc_now().isoformat(), "ai_feedback": feedback})
+    return serialize_tracker(tracker_crud.update(db, item, {"interview_review": review_values}))
 
 
 @router.delete("/{application_id}", status_code=204)

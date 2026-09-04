@@ -51,24 +51,12 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    id: "jobs",
-    labelKey: "nav.jobs",
+    id: "opportunities",
+    labelKey: "nav.opportunityHub",
     icon: (
       <svg {...ICON_PROPS}>
         <circle cx="11" cy="11" r="7" />
         <path d="M16.5 16.5 21 21" />
-      </svg>
-    ),
-  },
-  {
-    id: "opportunities",
-    labelKey: "nav.opportunities",
-    icon: (
-      <svg {...ICON_PROPS}>
-        <circle cx="12" cy="12" r="8.5" />
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 3.5V8M20.5 12H16M12 20.5V16M3.5 12H8" />
-        <path d="m16.7 7.3 2.1-2.1" />
       </svg>
     ),
   },
@@ -108,9 +96,9 @@ const NAV_ITEMS: NavItem[] = [
 
 const NAV_GROUPS: NavGroup[] = [
   { labelKey: "nav.foundation", items: [NAV_ITEMS[0]] },
-  { labelKey: "nav.discovery", items: NAV_ITEMS.slice(2, 4) },
-  { labelKey: "nav.prepare", items: NAV_ITEMS.slice(4, 6) },
-  { labelKey: "nav.manage", items: NAV_ITEMS.slice(6) },
+  { labelKey: "nav.discovery", items: NAV_ITEMS.slice(2, 3) },
+  { labelKey: "nav.prepare", items: NAV_ITEMS.slice(3, 5) },
+  { labelKey: "nav.manage", items: NAV_ITEMS.slice(5) },
 ];
 
 interface SidebarProps {

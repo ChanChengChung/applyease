@@ -31,6 +31,14 @@ export type AuthSession = {
   expires_at: string;
   current: boolean;
 };
+export type ReminderPreferences = {
+  email: string;
+  timezone: string;
+  enabled: boolean;
+  days_before: number;
+  local_hour: number;
+  delivery_mode: "file" | "smtp" | "disabled";
+};
 
 // Error codes thrown by this module. The UI maps these to localized
 // messages via i18n (auth.error.*) so no human-language text is hardcoded here.
@@ -188,6 +196,19 @@ export async function verifyMfaLogin(
   );
 }
 export const getMfaStatus = () => request<MFAStatus>("/auth/mfa", secureInit());
+export const getReminderPreferences = () =>
+  request<ReminderPreferences>("/auth/reminder-preferences", secureInit());
+export const updateReminderPreferences = (
+  payload: Partial<Pick<ReminderPreferences, "timezone" | "enabled" | "days_before" | "local_hour">>,
+) =>
+  request<ReminderPreferences>(
+    "/auth/reminder-preferences",
+    secureInit({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
 export const startMfaSetup = (currentPassword: string) =>
   request<MFASetup>(
     "/auth/mfa/setup",

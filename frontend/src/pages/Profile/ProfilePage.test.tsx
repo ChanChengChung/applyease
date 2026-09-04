@@ -3,11 +3,13 @@ import { renderWithProviders } from "../../test/render";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Experience } from "../../types/experience";
+import { ApiRequestError } from "../../services/request";
 
 const api = vi.hoisted(() => ({
   listExperiences: vi.fn(),
   uploadCV: vi.fn(),
   updateExperience: vi.fn(),
+  replaceExperience: vi.fn(),
   deleteExperience: vi.fn(),
   createExperience: vi.fn(),
   bulkConfirmExperiences: vi.fn(),
@@ -40,6 +42,7 @@ describe("ProfilePage", () => {
     api.listExperiences.mockResolvedValue([item]);
 
     api.updateExperience.mockResolvedValue(item);
+    api.replaceExperience.mockResolvedValue(item);
 
     api.deleteExperience.mockResolvedValue(undefined);
 
@@ -200,6 +203,33 @@ describe("ProfilePage", () => {
     await user.click(screen.getByRole("button", { name: "确认已选（1）" }));
     await waitFor(() =>
       expect(api.bulkConfirmExperiences).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("shows a duplicate comparison and lets the user replace the original", async () => {
+    const user = userEvent.setup();
+    api.createExperience.mockRejectedValue(
+      new ApiRequestError(409, "An experience with the same title and organization already exists"),
+    );
+
+    renderWithProviders(<ProfilePage />);
+    await screen.findByText("你的申请证据库", { exact: false });
+    await user.click(screen.getByRole("button", { name: "手动新增经历" }));
+    await user.type(screen.getByLabelText("标题"), "AI Developer");
+    await user.type(screen.getByLabelText("组织"), "Novelflow");
+    await user.type(screen.getByLabelText("描述"), "Updated experience details.");
+    await user.click(screen.getByRole("button", { name: "保存经历" }));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("发现重复经历");
+    expect(screen.getByText("原记录")).toBeInTheDocument();
+    expect(screen.getByText("当前输入")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "用当前内容替换" }));
+    await waitFor(() =>
+      expect(api.replaceExperience).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ description: "Updated experience details." }),
+      ),
     );
   });
 });

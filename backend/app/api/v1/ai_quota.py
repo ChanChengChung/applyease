@@ -1,7 +1,12 @@
 """Route-level quota boundary for provider-backed actions."""
 
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.services.ai_usage_limit_service import AIUsageLimitExceeded, consume_ai_usage, usage_summary
+
+router = APIRouter()
 
 from app.config import settings
 from app.services.ai_usage_limit_service import AIUsageLimitExceeded, consume_ai_usage
@@ -40,6 +45,11 @@ def reserve_cloud_ocr(db: Session) -> None:
         settings.cloud_ocr_max_requests,
         settings.cloud_ocr_rate_limit_window_seconds,
     )
+
+
+@router.get("/usage")
+def usage(db: Session = Depends(get_db)):
+    return usage_summary(db, int(db.info.get("current_user_id") or 0))
 
 
 def reserve_job_import(db: Session) -> None:

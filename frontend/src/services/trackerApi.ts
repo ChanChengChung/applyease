@@ -4,6 +4,7 @@ import type {
   TrackerStatus,
   TrackerSummary,
   ApplicationWorkspace,
+  InterviewReview,
 } from "../types/tracker";
 import { ApiRequestError, request } from "./request";
 
@@ -22,6 +23,14 @@ export type TrackerPayload = {
   interview_date?: string | null;
   follow_up_at?: string | null;
   notes?: string | null;
+  interview_review?: InterviewReview | null;
+};
+export type InterviewReviewCoachPayload = {
+  questions: string;
+  strengths: string;
+  improvements: string;
+  next_steps: string;
+  output_language?: "en" | "zh-CN" | "zh-TW";
 };
 
 export async function listTracked(
@@ -69,6 +78,19 @@ export async function updateTracked(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+export async function coachInterviewReview(
+  id: number,
+  payload: InterviewReviewCoachPayload,
+): Promise<TrackedApplication> {
+  return request<TrackedApplication>(
+    `/tracker/applications/${id}/interview-review/coach`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 export async function deleteTracked(id: number): Promise<void> {
   return request<void>(

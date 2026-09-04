@@ -69,11 +69,14 @@ def test_stage8_core_application_workflow_contract():
         f"/api/v1/applications/{application.json()['id']}/answers/generate-all", json={}
     )
 
-    assert generated.status_code == 200
-
-    assert any(item["status"] == "generated" for item in generated.json())
-
-    assert any(item["status"] == "manual_required" for item in generated.json())
+    assert generated.status_code == 202
+    task = generated.json()
+    assert task["task_id"]
+    assert task["status"] in {"queued", "running", "completed", "completed_with_errors"}
+    if task["status"] in {"queued", "running"}:
+        task = client.get(f"/api/v1/applications/batch-tasks/{task['task_id']}").json()
+    assert any(item["status"] == "generated" for item in task["results"])
+    assert any(item["status"] == "manual_required" for item in task["results"])
 
     manual_question = next(
         item

@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   checkSession: vi.fn(),
   getMfaStatus: vi.fn(),
+  getReminderPreferences: vi.fn(),
+  updateReminderPreferences: vi.fn(),
   listSessions: vi.fn(),
   changePassword: vi.fn(),
   revokeSession: vi.fn(),
@@ -35,6 +37,22 @@ describe("SecurityPage", () => {
       { id: "current", current: true, last_seen_at: "2026-08-18T10:00:00" },
       { id: "other", current: false, last_seen_at: "2026-08-17T10:00:00" },
     ]);
+    api.getReminderPreferences.mockResolvedValue({
+      email: "student@example.com",
+      timezone: "UTC",
+      enabled: true,
+      days_before: 7,
+      local_hour: 9,
+      delivery_mode: "disabled",
+    });
+    api.updateReminderPreferences.mockImplementation(async (payload: Record<string, unknown>) => ({
+      email: "student@example.com",
+      timezone: String(payload.timezone || "UTC"),
+      enabled: payload.enabled === undefined ? true : Boolean(payload.enabled),
+      days_before: Number(payload.days_before ?? 7),
+      local_hour: Number(payload.local_hour ?? 9),
+      delivery_mode: "disabled",
+    }));
     api.changePassword.mockResolvedValue({ message: "Password changed." });
     api.revokeSession.mockResolvedValue(undefined);
     api.downloadAccountData.mockResolvedValue({

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.config import settings
 
 from app.models.ai_observation import AIUsageBucket
 
@@ -20,6 +21,31 @@ class AIUsageLimitExceeded(RuntimeError):
     def __init__(self, retry_after_seconds: int) -> None:
         self.retry_after_seconds = max(1, retry_after_seconds)
         super().__init__("AI request quota exceeded")
+
+
+def usage_summary(db: Session, user_id: int) -> dict:
+    """Read current quota windows for the account-facing usage endpoint."""
+    now = utc_now()
+    limits = {
+        "generation": (settings.ai_generation_max_requests, settings.ai_generation_rate_limit_window_seconds),
+        "cloud_ocr": (settings.cloud_ocr_max_requests, settings.cloud_ocr_rate_limit_window_seconds),
+        "job_import": (settings.job_import_max_requests, settings.job_import_rate_limit_window_seconds),
+    }
+    buckets = {
+        bucket.category: bucket
+        for bucket in db.scalars(select(AIUsageBucket).where(AIUsageBucket.user_id == user_id)).all()
+    }
+    result = {}
+    for category, (maximum, window_seconds) in limits.items():
+        bucket = buckets.get(category)
+        active = bool(bucket and now - bucket.window_started_at < timedelta(seconds=window_seconds))
+        used = bucket.request_count if active else 0
+        result[category] = {
+            "used": used, "limit": maximum, "remaining": max(0, maximum - used),
+            "window_seconds": window_seconds,
+            "window_started_at": bucket.window_started_at if active else None,
+        }
+    return result
 
 
 def utc_now() -> datetime:

@@ -198,6 +198,7 @@ def build_research_plan(
     goal: str,
     language: str,
     learning_style: str = "hands_on",
+    missing_skills: list[str] | None = None,
 ) -> dict:
     facts = [
         {"title": item.title, "description": item.description[:600], "skills": item.skills[:20]}
@@ -205,7 +206,8 @@ def build_research_plan(
         if item.confirmed
     ][:10]
     budget = weekly_hours * weeks
-    prompt = f"""You are an evidence-first career learning mentor. Reply in {language}. Use the supplied live search results only. Prefer primary sources: official competition organisers, official software/documentation, public-data publishers, university/research institutions, or the organisation that runs the programme. Exclude blogs, Medium, Substack, Scribd, SEO pages, trading-course sellers and unverified aggregators. Do not claim the student completed anything. Do not recommend beginner material for skills clearly evidenced unless you explain missing depth. Return ONLY a valid JSON object, without markdown, with exactly: profile_summary (string), gaps (2-5 capability gaps), method (3-5 ordered, concrete actions).\nTARGET JOB: {job.company} · {job.title}\nREQUIREMENTS: {job.required_skills}; preferred={job.preferred_skills}\nCONFIRMED EVIDENCE: {facts}\nCONSTRAINTS: {weekly_hours} hours/week for {weeks} weeks ({budget} hours); goal={goal}."""
+    report_gaps = [str(skill).strip() for skill in (missing_skills or []) if str(skill).strip()]
+    prompt = f"""You are an evidence-first career learning mentor. Reply in {language}. Use the supplied live search results only. Prefer primary sources: official competition organisers, official software/documentation, public-data publishers, university/research institutions, or the organisation that runs the programme. Exclude blogs, Medium, Substack, Scribd, SEO pages, trading-course sellers and unverified aggregators. Do not claim the student completed anything. Do not recommend beginner material for skills clearly evidenced unless you explain missing depth. Return ONLY a valid JSON object, without markdown, with exactly: profile_summary (string), gaps (2-5 capability gaps), method (3-5 ordered, concrete actions).\nTARGET JOB: {job.company} · {job.title}\nREQUIREMENTS: {job.required_skills}; preferred={job.preferred_skills}\nMATCH REPORT MISSING SKILLS (prioritise these): {report_gaps}\nCONFIRMED EVIDENCE: {facts}\nCONSTRAINTS: {weekly_hours} hours/week for {weeks} weeks ({budget} hours); goal={goal}."""
     prompt += (
         "\\nLEARNING STYLE: "
         f"{learning_style}. Respect it in the ordered actions: hands_on means "
@@ -229,6 +231,10 @@ def build_research_plan(
         if not sources:
             raise ProviderError("No verifiable search sources")
         gaps = _clean_items(data.get("gaps"), purpose="gap", limit=300, max_items=5)
+        # Preserve the reviewed match report as the source of truth even when
+        # a provider returns a generic or differently worded gap list.
+        if report_gaps:
+            gaps = _clean_items([*report_gaps, *gaps], purpose="gap", limit=300, max_items=5)
         method = _clean_items(data.get("method"), purpose="method", limit=500, max_items=5)
         summary = _profile_summary(data.get("profile_summary"))
         # An incomplete response is less useful than the reviewed fallback and

@@ -30,6 +30,22 @@ export async function previewJobAnalysis(payload: {
   });
 }
 
+export async function previewManualJobAnalysis(payload: {
+  title: string;
+  company: string;
+  job_category: string;
+  location: string;
+  required_skills: string[];
+  responsibilities: string[];
+  additional_details: string;
+}): Promise<MatchReport> {
+  return request<MatchReport>(`/jobs/analyze-manual-preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function saveAnalyzedJob(payload: {
   title: string;
   company: string;

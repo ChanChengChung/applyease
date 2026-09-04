@@ -6,6 +6,16 @@ import type {
 } from "../types/experience";
 import { useT } from "../i18n/LanguageProvider";
 
+function personalDetailRows(description: string) {
+  return description
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.match(/^\s*([^:：]{1,32})\s*[:：]\s*(.+?)\s*$/);
+      return match ? { label: match[1], value: match[2] } : null;
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row));
+}
+
 export function ExperienceCard({
   item,
   onSave,
@@ -41,6 +51,8 @@ export function ExperienceCard({
         .filter(Boolean),
     ),
   ];
+  const personalRows =
+    item.category === "personal" ? personalDetailRows(item.description) : [];
 
   const reset = () => {
     setDraft(item);
@@ -355,7 +367,18 @@ export function ExperienceCard({
             <p className="experience-field-label">
               {t("profile.display.content")}
             </p>
-            <p>{item.description || t("profile.display.noContent")}</p>
+            {personalRows.length ? (
+              <dl className="personal-detail-grid">
+                {personalRows.map((row) => (
+                  <div key={row.label}>
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p>{item.description || t("profile.display.noContent")}</p>
+            )}
           </div>
           <div className="experience-skills-block">
             <p className="experience-field-label">

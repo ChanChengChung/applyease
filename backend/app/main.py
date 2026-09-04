@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -12,9 +15,23 @@ from app.api.v1.auth import router as auth_router
 from app.auth import get_current_user
 from app.config import settings
 from app import models  # noqa: F401 - register SQLAlchemy metadata
+from app.services.deadline_reminder_service import reminder_scheduler_loop
 
 if settings.app_env == "test":
     Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    reminder_task = None
+    if settings.deadline_reminder_scheduler_enabled and settings.app_env != "test":
+        reminder_task = asyncio.create_task(reminder_scheduler_loop())
+    try:
+        yield
+    finally:
+        if reminder_task is not None:
+            reminder_task.cancel()
+            await asyncio.gather(reminder_task, return_exceptions=True)
+
 
 app = FastAPI(
     title="ApplyEase API",
@@ -22,6 +39,7 @@ app = FastAPI(
     docs_url=None if settings.app_env == "production" else "/docs",
     redoc_url=None if settings.app_env == "production" else "/redoc",
     openapi_url=None if settings.app_env == "production" else "/openapi.json",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,

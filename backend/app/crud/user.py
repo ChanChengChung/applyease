@@ -34,6 +34,14 @@ def update_password_hash(db: Session, user: User, password_hash: str) -> User:
     return user
 
 
+def update_reminder_preferences(db: Session, user: User, values: dict) -> User:
+    for key, value in values.items():
+        setattr(user, key, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def mark_email_verified(db: Session, user: User, when) -> User:
     user.email_verified_at = when
 

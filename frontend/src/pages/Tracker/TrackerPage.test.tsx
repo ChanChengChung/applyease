@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   saveCalendarDownload: vi.fn(),
   createTracked: vi.fn(),
   updateTracked: vi.fn(),
+  coachInterviewReview: vi.fn(),
   deleteTracked: vi.fn(),
 }));
 vi.mock("../../services/trackerApi", () => api);
@@ -79,6 +80,24 @@ describe("TrackerPage", () => {
     });
     api.createTracked.mockResolvedValue(record);
     api.updateTracked.mockResolvedValue({ ...record, status: "interview" });
+    api.coachInterviewReview.mockResolvedValue({
+      ...record,
+      interview_review: {
+        questions: "How?",
+        strengths: "Clear",
+        improvements: "Structure",
+        next_steps: "Practise",
+        ai_feedback: {
+          summary: "Use a structured answer.",
+          strengths: [],
+          improvements: ["Name the result"],
+          suggested_answer_points: [],
+          follow_up_questions: [],
+          generation_method: "rules",
+          warnings: [],
+        },
+      },
+    });
     api.deleteTracked.mockResolvedValue(undefined);
     jobApi.listJobs.mockResolvedValue([
       {

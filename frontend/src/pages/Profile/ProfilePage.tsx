@@ -13,9 +13,12 @@ import {
   deleteExperience,
   getExperienceImpacts,
   listExperiences,
+  replaceExperience,
   updateExperience,
   uploadCV,
 } from "../../services/profileApi";
+import { ApiRequestError } from "../../services/request";
+import type { ExperiencePayload } from "../../services/profileApi";
 import type {
   Experience,
   ExperienceCategory,
@@ -93,6 +96,10 @@ export function ProfilePage({
     linkedin: "",
     github: "",
   });
+  const [duplicateConflict, setDuplicateConflict] = useState<{
+    existing: Experience;
+    incoming: ExperiencePayload;
+  } | null>(null);
 
   const t = useT();
 
@@ -251,7 +258,7 @@ export function ProfilePage({
       ]
         .filter(Boolean)
         .join("\n");
-      await createExperience({
+      const payload: ExperiencePayload = {
         title: isPersonal
           ? personalDetails.name.trim() || t("profile.personal.defaultTitle")
           : newExperience.title.trim(),
@@ -273,7 +280,8 @@ export function ProfilePage({
         source_file: newExperience.source_file.trim(),
         category: newExperience.category,
         confirmed: false,
-      });
+      };
+      await createExperience(payload);
 
       setNewExperience({
         title: "",
@@ -296,9 +304,79 @@ export function ProfilePage({
       setStatus(t("profile.created"));
       await load();
     } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        const isPersonal = newExperience.category === "personal";
+        const fallbackTitle = isPersonal
+          ? personalDetails.name.trim() || t("profile.personal.defaultTitle")
+          : newExperience.title.trim();
+        const fallbackOrganization = isPersonal
+          ? t("profile.personal.organization")
+          : newExperience.organization.trim();
+        const matches = await listExperiences({ query: fallbackTitle, limit: 100 });
+        const existing = matches.find(
+          (candidate) =>
+            candidate.title.trim().toLocaleLowerCase() ===
+              fallbackTitle.trim().toLocaleLowerCase() &&
+            candidate.organization.trim().toLocaleLowerCase() ===
+              fallbackOrganization.trim().toLocaleLowerCase(),
+        );
+        if (existing) {
+          const personalDescription = [
+            personalDetails.name && `${t("builder.name")}: ${personalDetails.name}`,
+            personalDetails.email && `${t("builder.email")}: ${personalDetails.email}`,
+            personalDetails.phone && `${t("builder.phone")}: ${personalDetails.phone}`,
+            personalDetails.location && `${t("builder.location")}: ${personalDetails.location}`,
+            personalDetails.address && `${t("profile.personal.address")}: ${personalDetails.address}`,
+            personalDetails.linkedin && `LinkedIn: ${personalDetails.linkedin}`,
+            personalDetails.github && `GitHub: ${personalDetails.github}`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+          setDuplicateConflict({
+            existing,
+            incoming: {
+              title: fallbackTitle,
+              organization: fallbackOrganization,
+              description: isPersonal ? personalDescription : newExperience.description.trim(),
+              skills: isPersonal
+                ? []
+                : [...new Set(newExperience.skills.split(/[,，\n]/).map((value) => value.trim()).filter(Boolean))],
+              achievements: [],
+              source_file: newExperience.source_file.trim(),
+              category: newExperience.category,
+              confirmed: false,
+            },
+          });
+          setStatus("");
+          return;
+        }
+      }
       setStatus(
         error instanceof Error ? error.message : t("profile.createFailed"),
       );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resolveDuplicate = async (replace: boolean) => {
+    if (!duplicateConflict) return;
+    setBusy(true);
+    try {
+      if (replace) {
+        await replaceExperience(
+          duplicateConflict.existing.id,
+          duplicateConflict.incoming,
+        );
+        setStatus(t("profile.duplicateReplaced"));
+      } else {
+        setStatus(t("profile.duplicateKept"));
+      }
+      setDuplicateConflict(null);
+      setShowCreate(false);
+      await load();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("profile.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -335,8 +413,9 @@ export function ProfilePage({
           <h1>{t("profile.hero.title")}</h1>
           <p className="sub">{t("profile.hero.sub")}</p>
           <div
-            className="experience-intake"
+            className={`experience-intake ${busy ? "experience-intake-parsing" : ""}`}
             aria-label={t("profile.intakeLabel")}
+            aria-busy={busy}
           >
             <div className="experience-intake-copy">
               <span aria-hidden="true">01</span>
@@ -362,15 +441,76 @@ export function ProfilePage({
               </button>
             </div>
           </div>
-          <p className="status" role="status">
-            {busy ? t("profile.parsing") : status}
-          </p>
+          {busy ? (
+            <div className="cv-parsing-banner" role="status" aria-live="polite">
+              <span className="cv-parsing-spinner" aria-hidden="true" />
+              <span className="cv-parsing-copy">
+                <strong>{t("profile.parsing")}</strong>
+                <small>{t("profile.parsingDetail")}</small>
+              </span>
+              <span className="cv-parsing-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+            </div>
+          ) : (
+            <p className="status" role="status">
+              {status}
+            </p>
+          )}
         </div>
         <div className="hero-orb hero-orb-experience" aria-hidden="true">
           <span>✦</span>
         </div>
       </header>
       <section className="product-content">
+        {duplicateConflict && (
+          <section className="duplicate-conflict" role="dialog" aria-modal="true" aria-labelledby="duplicate-conflict-title">
+            <div className="duplicate-conflict-heading">
+              <span aria-hidden="true">!</span>
+              <div>
+                <p className="section-kicker">DUPLICATE EVIDENCE</p>
+                <h2 id="duplicate-conflict-title">{t("profile.duplicateTitle")}</h2>
+                <p>{t("profile.duplicateSub")}</p>
+                <p className="duplicate-match-key">
+                  <strong>{t("profile.duplicateMatch")}</strong>
+                  {t("profile.field.title")}：{duplicateConflict.existing.title} · {t("profile.field.org")}：{duplicateConflict.existing.organization || t("shared.orgEmpty")}
+                </p>
+              </div>
+            </div>
+            <div className="duplicate-compare-grid">
+              <div>
+                <strong>{t("profile.duplicateExisting")}</strong>
+                <dl>
+                  <dt className="duplicate-same-field">{t("profile.field.title")}</dt><dd className="duplicate-same-field">{duplicateConflict.existing.title}</dd>
+                  <dt>{t("profile.field.org")}</dt><dd>{duplicateConflict.existing.organization || t("shared.orgEmpty")}</dd>
+                  <dt>{t("profile.field.category")}</dt><dd>{t(`profile.category.${duplicateConflict.existing.category}`)}</dd>
+                  <dt>{t("profile.field.desc")}</dt><dd>{duplicateConflict.existing.description || t("profile.display.noContent")}</dd>
+                  <dt>{t("profile.field.skills")}</dt><dd>{duplicateConflict.existing.skills.join(", ") || t("profile.display.noSkills")}</dd>
+                </dl>
+              </div>
+              <div className="duplicate-incoming">
+                <strong>{t("profile.duplicateIncoming")}</strong>
+                <dl>
+                  <dt className="duplicate-same-field">{t("profile.field.title")}</dt><dd className="duplicate-same-field">{duplicateConflict.incoming.title}</dd>
+                  <dt>{t("profile.field.org")}</dt><dd>{duplicateConflict.incoming.organization || t("shared.orgEmpty")}</dd>
+                  <dt>{t("profile.field.category")}</dt><dd>{t(`profile.category.${duplicateConflict.incoming.category}`)}</dd>
+                  <dt>{t("profile.field.desc")}</dt><dd>{duplicateConflict.incoming.description || t("profile.display.noContent")}</dd>
+                  <dt>{t("profile.field.skills")}</dt><dd>{duplicateConflict.incoming.skills.join(", ") || t("profile.display.noSkills")}</dd>
+                </dl>
+              </div>
+            </div>
+            <div className="actions duplicate-conflict-actions">
+              <button type="button" onClick={() => void resolveDuplicate(false)} disabled={busy}>
+                {t("profile.duplicateKeep")}
+              </button>
+              <button type="button" onClick={() => void resolveDuplicate(true)} disabled={busy}>
+                {t("profile.duplicateReplace")}
+              </button>
+            </div>
+          </section>
+        )}
         <div className="section-heading">
           <div>
             <p className="section-kicker">01 · EVIDENCE LIBRARY</p>

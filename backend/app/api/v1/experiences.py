@@ -14,6 +14,7 @@ from app.schemas.experience import (
 from app.crud import job as job_crud
 from app.crud import material as material_crud
 from app.services.experience_impact_service import build_experience_impacts
+from app.services.experience_replacement_service import replace_experience as replace_experience_record
 
 router = APIRouter()
 
@@ -79,6 +80,27 @@ def update_experience(experience_id: int, payload: ExperienceUpdate, db: Session
             detail=f"An experience with the same title and organization already exists (id={updated.id})",
         )
 
+    return updated
+
+
+@router.put("/{experience_id}/replace", response_model=ExperienceRead)
+def replace_experience(
+    experience_id: int, payload: ExperienceCreate, db: Session = Depends(get_db)
+):
+    """Replace an existing duplicate record with the user's reviewed input.
+
+    The record keeps its database ID so every downstream reference remains
+    intact.  Replaced evidence must be confirmed again before it can be used
+    for matching or generation.
+    """
+    updated, duplicate = replace_experience_record(db, experience_id, payload.model_dump())
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Experience not found")
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An experience with the same title and organization already exists (id={updated.id})",
+        )
     return updated
 
 

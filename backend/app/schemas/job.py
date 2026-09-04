@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Any
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class JobAnalyzeRequest(BaseModel):
@@ -26,6 +26,50 @@ class JobAnalyzeRequest(BaseModel):
             raise ValueError("description must contain at least 20 non-whitespace characters")
 
         return normalized
+
+
+class ManualJobBriefRequest(BaseModel):
+    """Structured facts supplied when no usable public job posting exists."""
+
+    title: str = Field(default="Untitled role", max_length=200)
+    company: str = Field(default="", max_length=200)
+    job_category: str = Field(default="", max_length=200)
+    location: str = Field(default="", max_length=200)
+    required_skills: list[str] = Field(default_factory=list, max_length=30)
+    responsibilities: list[str] = Field(default_factory=list, max_length=20)
+    additional_details: str = Field(default="", max_length=10000)
+
+    @field_validator("title", "company", "job_category", "location", "additional_details")
+    @classmethod
+    def normalize_manual_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("required_skills", "responsibilities")
+    @classmethod
+    def normalize_manual_items(cls, values: list[str]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                " ".join(str(value).strip().split())[:500]
+                for value in values
+                if str(value).strip()
+            )
+        )
+
+    def to_description(self) -> str:
+        lines = [
+            f"Job category: {self.job_category}" if self.job_category else "",
+            f"Location: {self.location}" if self.location else "",
+            f"Required skills: {', '.join(self.required_skills)}" if self.required_skills else "",
+            *(f"Key responsibility: {item}" for item in self.responsibilities),
+            self.additional_details,
+        ]
+        return "\n".join(line for line in lines if line).strip()
+
+    @model_validator(mode="after")
+    def require_sufficient_role_context(self):
+        if len(self.to_description()) < 20:
+            raise ValueError("manual job brief must contain at least 20 characters of role context")
+        return self
 
 
 class JobSaveAnalyzedRequest(JobAnalyzeRequest):
@@ -96,6 +140,15 @@ class Evidence(BaseModel):
     evidence: str
 
 
+class EligibilityCheck(BaseModel):
+    """A hard application constraint extracted from the job description."""
+
+    kind: Literal["education", "graduation", "location", "work_authorization", "availability"]
+    requirement: str
+    status: Literal["met", "needs_confirmation"] = "needs_confirmation"
+    evidence: str = ""
+
+
 class MatchReport(BaseModel):
     job: JobRead
 
@@ -118,6 +171,8 @@ class MatchReport(BaseModel):
     missing_preferred_skills: list[str] = Field(default_factory=list)
 
     score_breakdown: dict[str, int] = Field(default_factory=dict)
+
+    eligibility_checks: list[EligibilityCheck] = Field(default_factory=list)
 
     warnings: list[str] = Field(default_factory=list)
 

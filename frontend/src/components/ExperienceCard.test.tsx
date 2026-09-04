@@ -155,4 +155,23 @@ describe("ExperienceCard", () => {
     await user.click(screen.getByRole("button", { name: "删除" }));
     expect(onDelete).toHaveBeenCalledWith(item);
   });
+
+  it("renders extracted personal details as clear labelled fields", () => {
+    const personal: Experience = {
+      ...item,
+      title: "Chen Zhengzhong",
+      organization: "Personal profile",
+      category: "personal",
+      description:
+        "Name: Chen Zhengzhong\nEmail: chen@example.com\nPhone: +852 1234 5678",
+    };
+
+    renderWithProviders(
+      <ExperienceCard item={personal} onSave={vi.fn()} onDelete={vi.fn()} />,
+    );
+
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("chen@example.com")).toBeInTheDocument();
+    expect(screen.getByText("+852 1234 5678")).toBeInTheDocument();
+  });
 });

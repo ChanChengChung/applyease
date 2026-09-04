@@ -7,13 +7,15 @@ import {
   disableMfa,
   downloadAccountData,
   getMfaStatus,
+  getReminderPreferences,
   listSessions,
   revokeSession,
   rotateRecoveryCodes,
   saveAccountDownload,
   startMfaSetup,
+  updateReminderPreferences,
 } from "../../services/authApi";
-import type { AuthSession, AuthUser } from "../../services/authApi";
+import type { AuthSession, AuthUser, ReminderPreferences } from "../../services/authApi";
 import { useI18n, useT } from "../../i18n/LanguageProvider";
 
 export function SecurityPage() {
@@ -36,6 +38,12 @@ export function SecurityPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reminderPreferences, setReminderPreferences] =
+    useState<ReminderPreferences | null>(null);
+  const [reminderTimezone, setReminderTimezone] = useState("UTC");
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderDays, setReminderDays] = useState(7);
+  const [reminderHour, setReminderHour] = useState(9);
   const t = useT();
   const { language } = useI18n();
   const dateLocale =
@@ -43,15 +51,39 @@ export function SecurityPage() {
   const deleteKeyword = t("security.deleteKeyword");
   const load = useCallback(async () => {
     try {
-      const [me, mfa, devices] = await Promise.all([
+      const [me, mfa, devices, reminders] = await Promise.all([
         checkSession(),
         getMfaStatus(),
         listSessions(),
+        getReminderPreferences(),
       ]);
       setUser(me);
       setEnabled(mfa.enabled);
       setRemaining(mfa.recovery_codes_remaining);
       setSessions(devices);
+      setReminderPreferences(reminders);
+      setReminderTimezone(reminders.timezone);
+      setReminderEnabled(reminders.enabled);
+      setReminderDays(reminders.days_before);
+      setReminderHour(reminders.local_hour);
+
+      // A new account starts at UTC.  Capture the browser's IANA zone once so
+      // the scheduler can interpret dates in the student's local time.  An
+      // explicit non-UTC choice is always respected.
+      const detected =
+        typeof Intl !== "undefined"
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone
+          : "";
+      if (reminders.timezone === "UTC" && detected && detected !== "UTC") {
+        try {
+          const synced = await updateReminderPreferences({ timezone: detected });
+          setReminderPreferences(synced);
+          setReminderTimezone(synced.timezone);
+        } catch {
+          // The visible settings remain editable if automatic detection cannot
+          // be persisted (for example, during an offline demo).
+        }
+      }
     } catch {
       setError(t("security.loadFailed"));
     }
@@ -134,6 +166,21 @@ export function SecurityPage() {
       );
       setNotice(t("security.exported"));
     });
+  const saveReminderPreferences = () =>
+    run(async () => {
+      const saved = await updateReminderPreferences({
+        timezone: reminderTimezone,
+        enabled: reminderEnabled,
+        days_before: reminderDays,
+        local_hour: reminderHour,
+      });
+      setReminderPreferences(saved);
+      setReminderTimezone(saved.timezone);
+      setReminderEnabled(saved.enabled);
+      setReminderDays(saved.days_before);
+      setReminderHour(saved.local_hour);
+      setNotice(t("security.reminderSaved"));
+    });
   const removeAccount = () =>
     run(async () => {
       if (deletePhrase !== deleteKeyword) {
@@ -170,6 +217,64 @@ export function SecurityPage() {
           ) : (
             <p>{t("security.loadingAccount")}</p>
           )}
+        </article>
+        <article className="card security-reminder-settings">
+          <h2>{t("security.deadlineReminders")}</h2>
+          <p>{t("security.deadlineRemindersDescription")}</p>
+          <label>
+            {t("security.reminderTimezone")}
+            <input
+              aria-label={t("security.reminderTimezone")}
+              value={reminderTimezone}
+              onChange={(event) => setReminderTimezone(event.target.value)}
+              placeholder="Asia/Hong_Kong"
+            />
+          </label>
+          <label>
+            {t("security.reminderDays")}
+            <input
+              aria-label={t("security.reminderDays")}
+              type="number"
+              min={0}
+              max={30}
+              value={reminderDays}
+              onChange={(event) => setReminderDays(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            {t("security.reminderHour")}
+            <input
+              aria-label={t("security.reminderHour")}
+              type="number"
+              min={0}
+              max={23}
+              value={reminderHour}
+              onChange={(event) => setReminderHour(Number(event.target.value))}
+            />
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={reminderEnabled}
+              onChange={(event) => setReminderEnabled(event.target.checked)}
+            />
+            {t("security.reminderEnabled")}
+          </label>
+          {reminderPreferences && (
+            <small>
+              {t("security.reminderDestination", {
+                email: reminderPreferences.email,
+                mode: reminderPreferences.delivery_mode,
+              })}
+            </small>
+          )}
+          <button
+            type="button"
+            disabled={busy || !reminderTimezone || reminderDays < 0 || reminderDays > 30 || reminderHour < 0 || reminderHour > 23}
+            onClick={() => void saveReminderPreferences()}
+          >
+            {busy ? t("security.processing") : t("security.saveReminderSettings")}
+          </button>
         </article>
         <article className="card">
           <h2>{t("security.changePassword")}</h2>

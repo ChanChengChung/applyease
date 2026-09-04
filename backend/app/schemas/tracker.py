@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -23,6 +23,8 @@ class TrackerCreate(BaseModel):
     follow_up_at: date | None = None
 
     notes: str = Field(default="", max_length=10000)
+
+    interview_review: dict[str, Any] | None = None
 
     @field_validator("company", "role")
     @classmethod
@@ -58,6 +60,8 @@ class TrackerUpdate(BaseModel):
     follow_up_at: date | None = None
 
     notes: str | None = Field(default=None, max_length=10000)
+
+    interview_review: dict[str, Any] | None = None
 
     @field_validator("company", "role")
     @classmethod

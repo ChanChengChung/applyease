@@ -98,6 +98,8 @@ class DashboardSummary(BaseModel):
 
     active_applications: int
 
+    urgent_deadlines_count: int = 0
+
     upcoming_deadlines: list[DashboardDeadline]
 
     steps: list[DashboardStep]

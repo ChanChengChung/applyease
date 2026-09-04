@@ -183,7 +183,7 @@ def update_material(material_id: int, payload: MaterialUpdate, db: Session = Dep
         "warnings": warnings,
         "generation_method": "user_edited",
     }
-
+    material_crud.create_edit_snapshot(db, record)
     return _record_payload(material_crud.update_content(db, record, content))
 
 

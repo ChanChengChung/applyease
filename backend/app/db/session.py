@@ -69,7 +69,7 @@ def enforce_owner(execute_state):
     from app.models.resource import ResourceFeedback, ResourceProgress
     from app.models.research_plan import ResearchPlan
 
-    from app.models.tracker import TrackedApplication
+    from app.models.tracker import DeadlineReminderDelivery, TrackedApplication
 
     from app.models.ai_observation import AIInvocation
     from app.models.advisor import AdvisorConversationMessage
@@ -86,6 +86,7 @@ def enforce_owner(execute_state):
         ResourceProgress,
         ResourceFeedback,
         TrackedApplication,
+        DeadlineReminderDelivery,
         AIInvocation,
         ResearchPlan,
         AdvisorConversationMessage,

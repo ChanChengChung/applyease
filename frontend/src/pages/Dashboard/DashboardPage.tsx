@@ -155,6 +155,19 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
         </div>
       </header>
 
+      {(summary.urgent_deadlines_count || 0) > 0 && (
+        <section className="dashboard-urgent-banner" role="status">
+          <span className="dashboard-urgent-mark" aria-hidden="true">!</span>
+          <div>
+            <strong>{t("dashboard.urgentDeadlineTitle", { n: summary.urgent_deadlines_count || 0 })}</strong>
+            <p>{t("dashboard.urgentDeadlineHelp")}</p>
+          </div>
+          <button type="button" onClick={() => navigate("tracker")}>
+            {t("dashboard.manageDates")} →
+          </button>
+        </section>
+      )}
+
       <section
         className="dashboard-metrics"
         aria-label={t("dashboard.overviewLabel")}

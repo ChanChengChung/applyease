@@ -54,6 +54,12 @@ def build_account_export(db: Session, user: User) -> bytes:
             "email": user.email,
             "email_verified": user.email_verified,
             "created_at": user.created_at,
+            "deadline_reminders": {
+                "enabled": user.deadline_reminders_enabled,
+                "timezone": user.timezone,
+                "days_before": user.deadline_reminder_days,
+                "local_hour": user.deadline_reminder_hour,
+            },
         },
         "privacy": {
             "included": "Application records and user-authored content; uploaded file metadata only.",

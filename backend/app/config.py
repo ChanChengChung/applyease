@@ -35,6 +35,11 @@ class Settings(BaseSettings):
 
     ai_application_form_enabled: bool = False
 
+    # Interview debrief coaching is a separate opt-in AI capability.  The
+    # deterministic feedback path remains available when this is disabled or
+    # when every configured provider is unavailable.
+    ai_interview_review_enabled: bool = False
+
     screenshot_ocr_enabled: bool = False
 
     max_screenshot_bytes: int = 5 * 1024 * 1024
@@ -169,6 +174,13 @@ class Settings(BaseSettings):
 
     smtp_starttls: bool = True
 
+    # A single-process scheduler is sufficient for the local/demo deployment.
+    # Delivery rows have a database uniqueness constraint, so multiple API
+    # workers can also run the scan safely without duplicate emails.
+    deadline_reminder_scheduler_enabled: bool = True
+
+    deadline_reminder_interval_seconds: int = 900
+
     enforce_https: bool = False
 
     allowed_hosts: str = "localhost,127.0.0.1,testserver"
@@ -228,6 +240,7 @@ class Settings(BaseSettings):
         "mfa_max_failed_attempts",
         "mfa_recovery_code_count",
         "smtp_port",
+        "deadline_reminder_interval_seconds",
     )
     @classmethod
     def validate_positive_numbers(cls, value: int) -> int:

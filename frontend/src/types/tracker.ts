@@ -16,10 +16,28 @@ export type TrackedApplication = {
   interview_date?: string;
   follow_up_at?: string;
   notes: string;
+  interview_review?: InterviewReview | null;
   created_at: string;
   is_overdue?: boolean;
   is_follow_up_due?: boolean;
   next_action?: string;
+};
+export type InterviewReview = {
+  questions: string;
+  strengths: string;
+  improvements: string;
+  next_steps: string;
+  completed_at?: string;
+  ai_feedback?: InterviewReviewFeedback | null;
+};
+export type InterviewReviewFeedback = {
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  suggested_answer_points: string[];
+  follow_up_questions: string[];
+  generation_method: "ai" | "rules";
+  warnings: string[];
 };
 export type TrackerSummary = {
   total: number;

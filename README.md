@@ -99,6 +99,7 @@ AI_EXTRACTION_ENABLED=true
 AI_JOB_ANALYSIS_ENABLED=true
 AI_MATERIAL_GENERATION_ENABLED=true
 AI_APPLICATION_FORM_ENABLED=true
+AI_INTERVIEW_REVIEW_ENABLED=true
 
 # Optional cloud fallback / opt-in OCR
 GEMINI_API_KEY=your_key_here
@@ -113,9 +114,41 @@ DASHSCOPE_MODEL=qwen-plus
 
 # Optional Opportunity Radar web research
 BOCHA_SEARCH_API_KEY=your_key_here
+
+# Deadline email reminders (the account settings page also stores each user's
+# IANA timezone, reminder window and local delivery hour).  `file` is useful
+# for local demos; production should use SMTP credentials.
+DEADLINE_REMINDER_SCHEDULER_ENABLED=true
+DEADLINE_REMINDER_INTERVAL_SECONDS=900
+MAIL_DELIVERY_MODE=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_STARTTLS=true
 ```
 
 Never use `VITE_` variables for API keys, and never commit `.env`, `.env.production`, database files, uploads or generated mailboxes.
+
+### Deadline reminders and interview debrief coaching
+
+Open **Account settings → Deadline email reminders** to choose the reminder
+window, local hour and IANA timezone. New accounts automatically offer the
+browser's timezone (for example `Asia/Hong_Kong`). At the selected local hour,
+the backend scheduler checks active tracker records and sends at most one email
+per application/deadline. A database delivery ledger prevents duplicate emails
+when the process is restarted or multiple workers run. In development,
+`MAIL_DELIVERY_MODE=file` writes the email JSON to `backend/dev-mailbox`; in
+production configure SMTP and use `MAIL_DELIVERY_MODE=smtp`.
+To run one explicit smoke-test scan instead of waiting for the 15-minute tick,
+run `PYTHONPATH=. .venv/bin/python -m app.cli reminders scan` from `backend`.
+
+In **Application tracker → Interview debrief**, enter the questions and your
+reflection, then choose **Analyse with AI**. The endpoint uses confirmed
+experiences and the linked role as context, persists the suggestions alongside
+the debrief, and clearly labels deterministic guidance when AI is disabled or
+unavailable. Enable it with `AI_INTERVIEW_REVIEW_ENABLED=true` and configure
+Ollama, DashScope or Gemini as described above.
 
 ## Test and build
 

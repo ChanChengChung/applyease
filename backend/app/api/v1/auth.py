@@ -34,6 +34,7 @@ from app.schemas.auth import (
     TokenConfirmRequest,
 )
 from app.schemas.auth import SensitiveAccountActionRequest
+from app.schemas.notifications import ReminderPreferencesRead, ReminderPreferencesUpdate
 from app.services import account_lifecycle_service as lifecycle
 from app.services.email_service import MailDeliveryError
 from app.services import mfa_service
@@ -348,6 +349,38 @@ def disable_mfa(
 def me(user: Any = Depends(get_current_user)):
 
     return user
+
+
+@router.get("/reminder-preferences", response_model=ReminderPreferencesRead)
+def reminder_preferences(user: Any = Depends(get_current_user)):
+    return {
+        "email": user.email,
+        "timezone": user.timezone or "UTC",
+        "enabled": bool(user.deadline_reminders_enabled),
+        "days_before": int(user.deadline_reminder_days),
+        "local_hour": int(user.deadline_reminder_hour),
+        "delivery_mode": settings.mail_delivery_mode,
+    }
+
+
+@router.patch("/reminder-preferences", response_model=ReminderPreferencesRead)
+def update_reminder_preferences(
+    payload: ReminderPreferencesUpdate,
+    user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    values = payload.model_dump(exclude_unset=True)
+    db_values: dict[str, object] = {}
+    if "timezone" in values:
+        db_values["timezone"] = values["timezone"]
+    if "enabled" in values:
+        db_values["deadline_reminders_enabled"] = values["enabled"]
+    if "days_before" in values:
+        db_values["deadline_reminder_days"] = values["days_before"]
+    if "local_hour" in values:
+        db_values["deadline_reminder_hour"] = values["local_hour"]
+    user_crud.update_reminder_preferences(db, user, db_values)
+    return reminder_preferences(user)
 
 
 @router.get("/sessions", response_model=list[SessionRead])

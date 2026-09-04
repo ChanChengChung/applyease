@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { PageFeedback } from "../../components/PageFeedback";
 import {
   createTracked,
+  coachInterviewReview,
   deleteTracked,
   downloadTrackerCalendar,
   getTrackerReminders,
@@ -19,8 +20,9 @@ import type {
   TrackerStatus,
   TrackerSummary,
   ApplicationWorkspace,
+  InterviewReview,
 } from "../../types/tracker";
-import { useT } from "../../i18n/LanguageProvider";
+import { useI18n, useT } from "../../i18n/LanguageProvider";
 import { listJobs } from "../../services/jobApi";
 import type { Job } from "../../types/job";
 
@@ -42,6 +44,12 @@ const emptyForm = {
   interview_date: "",
   follow_up_at: "",
   notes: "",
+};
+const emptyReview: InterviewReview = {
+  questions: "",
+  strengths: "",
+  improvements: "",
+  next_steps: "",
 };
 type Props = {
   initialJob?: NavigationJob;
@@ -138,6 +146,8 @@ export function TrackerPage({
 
   const [error, setError] = useState("");
   const [calendarMessage, setCalendarMessage] = useState("");
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const [reviewDraft, setReviewDraft] = useState<InterviewReview>(emptyReview);
 
   useEffect(() => {
     if (!initialTrackerId || loading || !items.some((item) => item.id === initialTrackerId)) {
@@ -159,6 +169,7 @@ export function TrackerPage({
   }, [calendarMessage]);
 
   const t = useT();
+  const { language } = useI18n();
   const statusLabel = (status: TrackerStatus | string) =>
     t(`tracker.status.${status}`);
   const linkedJob = (item: TrackedApplication): NavigationJob | undefined =>
@@ -290,6 +301,47 @@ export function TrackerPage({
       setCalendarMessage(t("tracker.calendarDownloadComplete"));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("tracker.calendarFailed"));
+    }
+  };
+
+  const saveReview = async (item: TrackedApplication) => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateTracked(item.id, {
+        interview_review: {
+          ...reviewDraft,
+          completed_at: new Date().toISOString(),
+        },
+      });
+      setReviewing(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("tracker.reviewSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const coachReview = async (item: TrackedApplication) => {
+    setSaving(true);
+    setError("");
+    try {
+      const coached = await coachInterviewReview(item.id, {
+        questions: reviewDraft.questions,
+        strengths: reviewDraft.strengths,
+        improvements: reviewDraft.improvements,
+        next_steps: reviewDraft.next_steps,
+        output_language: language,
+      });
+      setReviewDraft(coached.interview_review || reviewDraft);
+      setItems((current) =>
+        current.map((candidate) => (candidate.id === coached.id ? coached : candidate)),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("tracker.reviewCoachFailed"));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -837,6 +889,125 @@ export function TrackerPage({
                       </p>
                     )}
                     {item.notes && <p>{item.notes}</p>}
+                    <section className="tracker-interview-review" aria-label={t("tracker.interviewReviewTitle")}>
+                      <div className="tracker-interview-review-header">
+                        <div>
+                          <strong>{t("tracker.interviewReviewTitle")}</strong>
+                          <p>{t("tracker.interviewReviewHelp")}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => {
+                            setReviewing(item.id);
+                            setReviewDraft(item.interview_review || emptyReview);
+                          }}
+                        >
+                          {item.interview_review
+                            ? t("tracker.interviewReviewEdit")
+                            : t("tracker.interviewReviewAdd")}
+                        </button>
+                      </div>
+                      {item.interview_review && reviewing !== item.id && (
+                        <div className="tracker-interview-review-summary">
+                          <p><strong>{t("tracker.interviewReviewQuestions")}:</strong> {item.interview_review.questions || "—"}</p>
+                          <p><strong>{t("tracker.interviewReviewImprovements")}:</strong> {item.interview_review.improvements || "—"}</p>
+                          {item.interview_review.ai_feedback?.summary && (
+                            <p><strong>{t("tracker.interviewReviewAiTitle")}:</strong> {item.interview_review.ai_feedback.summary}</p>
+                          )}
+                          <small>{item.interview_review.completed_at ? new Date(item.interview_review.completed_at).toLocaleDateString() : ""}</small>
+                        </div>
+                      )}
+                      {reviewing === item.id && (
+                        <div className="tracker-interview-review-form">
+                          <label>
+                            {t("tracker.interviewReviewQuestions")}
+                            <textarea
+                              value={reviewDraft.questions}
+                              onChange={(event) => setReviewDraft({ ...reviewDraft, questions: event.target.value })}
+                              placeholder={t("tracker.interviewReviewQuestionsPlaceholder")}
+                            />
+                          </label>
+                          <label>
+                            {t("tracker.interviewReviewStrengths")}
+                            <textarea
+                              value={reviewDraft.strengths}
+                              onChange={(event) => setReviewDraft({ ...reviewDraft, strengths: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            {t("tracker.interviewReviewImprovements")}
+                            <textarea
+                              value={reviewDraft.improvements}
+                              onChange={(event) => setReviewDraft({ ...reviewDraft, improvements: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            {t("tracker.interviewReviewNextSteps")}
+                            <textarea
+                              value={reviewDraft.next_steps}
+                              onChange={(event) => setReviewDraft({ ...reviewDraft, next_steps: event.target.value })}
+                            />
+                          </label>
+                          {reviewDraft.ai_feedback && (
+                            <div className="tracker-interview-ai-feedback" role="status">
+                              <strong>{t("tracker.interviewReviewAiTitle")}</strong>
+                              <p>{reviewDraft.ai_feedback.summary}</p>
+                              {reviewDraft.ai_feedback.strengths.length > 0 && (
+                                <>
+                                  <h4>{t("tracker.interviewReviewAiStrengths")}</h4>
+                                  <ul>
+                                    {reviewDraft.ai_feedback.strengths.map((value) => <li key={value}>{value}</li>)}
+                                  </ul>
+                                </>
+                              )}
+                              {reviewDraft.ai_feedback.improvements.length > 0 && (
+                                <>
+                                  <h4>{t("tracker.interviewReviewAiImprovements")}</h4>
+                                <ul>
+                                  {reviewDraft.ai_feedback.improvements.map((value) => (
+                                    <li key={value}>{value}</li>
+                                  ))}
+                                </ul>
+                                </>
+                              )}
+                              {reviewDraft.ai_feedback.suggested_answer_points.length > 0 && (
+                                <>
+                                  <h4>{t("tracker.interviewReviewAiAnswerPoints")}</h4>
+                                  <ul>
+                                    {reviewDraft.ai_feedback.suggested_answer_points.map((value) => <li key={value}>{value}</li>)}
+                                  </ul>
+                                </>
+                              )}
+                              {reviewDraft.ai_feedback.follow_up_questions.length > 0 && (
+                                <>
+                                  <h4>{t("tracker.interviewReviewAiFollowUps")}</h4>
+                                  <ul>
+                                    {reviewDraft.ai_feedback.follow_up_questions.map((value) => <li key={value}>{value}</li>)}
+                                  </ul>
+                                </>
+                              )}
+                              {reviewDraft.ai_feedback.warnings.map((value) => (
+                                <small key={value}>{value}</small>
+                              ))}
+                            </div>
+                          )}
+                          <div className="actions">
+                            <button
+                              type="button"
+                              disabled={saving || ![reviewDraft.questions, reviewDraft.strengths, reviewDraft.improvements, reviewDraft.next_steps].some((value) => value.trim())}
+                              onClick={() => void coachReview(item)}
+                            >
+                              {saving ? t("tracker.interviewReviewCoaching") : t("tracker.interviewReviewCoach")}
+                            </button>
+                            <button type="button" disabled={saving} onClick={() => void saveReview(item)}>
+                              {saving ? t("tracker.saving") : t("tracker.interviewReviewSave")}
+                            </button>
+                            <button type="button" onClick={() => setReviewing(null)}>{t("tracker.cancel")}</button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
                     {workspaces[item.id] && (
                       <section
                         className="tracker-workspace"

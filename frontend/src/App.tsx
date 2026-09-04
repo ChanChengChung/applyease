@@ -28,14 +28,9 @@ const DashboardPage = lazy(() =>
     default: module.DashboardPage,
   })),
 );
-const JobAnalysisPage = lazy(() =>
-  import("./pages/JobAnalysis/JobAnalysisPage").then((module) => ({
-    default: module.JobAnalysisPage,
-  })),
-);
-const OpportunityRadarPage = lazy(() =>
-  import("./pages/OpportunityRadar/OpportunityRadarPage").then((module) => ({
-    default: module.OpportunityRadarPage,
+const OpportunityHubPage = lazy(() =>
+  import("./pages/OpportunityHub/OpportunityHubPage").then((module) => ({
+    default: module.OpportunityHubPage,
   })),
 );
 const ProfilePage = lazy(() =>
@@ -168,7 +163,8 @@ export function App() {
       />
     ),
     jobs: () => (
-      <JobAnalysisPage
+      <OpportunityHubPage
+        initialMode="analyze"
         initialJob={selectedJob}
         onJobAnalyzed={setSelectedJob}
         onReturnToDashboard={() => navigate("dashboard")}
@@ -176,7 +172,8 @@ export function App() {
       />
     ),
     opportunities: () => (
-      <OpportunityRadarPage
+      <OpportunityHubPage
+        initialMode="discover"
         onJobTracked={(job, tracker) => {
           setSelectedJob(job);
           setSelectedTrackerId(tracker.id);

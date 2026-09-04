@@ -226,6 +226,7 @@ def research_plan(payload: ResearchPlanRequest, db: Session = Depends(get_db)):
         job,
         experience_crud.list_all(db),
         resource_crud.list_all(db),
+        missing_skills=match_job(job, experience_crud.list_all(db), ai_enabled=False).missing_skills,
         weekly_hours=payload.weekly_hours,
         weeks=payload.weeks,
         goal=payload.goal,

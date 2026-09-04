@@ -15,9 +15,11 @@ import type { Experience } from "../../types/experience";
 export function OpportunityRadarPage({
   onJobImported,
   onJobTracked,
+  hideHero = false,
 }: {
   onJobImported?: (job: Job) => void;
   onJobTracked?: (job: Job, tracker: TrackedApplication) => void;
+  hideHero?: boolean;
 }) {
   const t = useT();
   const { language } = useI18n();
@@ -239,7 +241,7 @@ export function OpportunityRadarPage({
 
   return (
     <main className="product-page opportunity-page">
-      <header className="product-hero opportunity-hero">
+      {!hideHero && <header className="product-hero opportunity-hero">
         <div>
           <p className="eyebrow">
             <strong>APPLYEASE</strong>
@@ -251,7 +253,7 @@ export function OpportunityRadarPage({
         <div className="hero-orb" aria-hidden="true">
           <span>⌁</span>
         </div>
-      </header>
+      </header>}
 
       <section className="product-content opportunity-content">
         <section className="card radar-brief-card">

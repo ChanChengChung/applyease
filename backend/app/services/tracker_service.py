@@ -53,6 +53,7 @@ def serialize_tracker(item: TrackedApplication, today: date | None = None) -> di
         "interview_date": item.interview_date,
         "follow_up_at": item.follow_up_at,
         "notes": item.notes or "",
+        "interview_review": item.interview_review,
         "created_at": item.created_at,
         "is_overdue": overdue,
         "is_follow_up_due": follow_up_due,

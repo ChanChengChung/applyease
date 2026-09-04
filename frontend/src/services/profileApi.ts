@@ -85,6 +85,17 @@ export async function updateExperience(item: Experience): Promise<Experience> {
   });
 }
 
+export async function replaceExperience(
+  id: number,
+  item: ExperiencePayload,
+): Promise<Experience> {
+  return request<Experience>(`/experiences/${id}/replace`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...item, confirmed: false }),
+  });
+}
+
 export async function deleteExperience(id: number): Promise<void> {
   return request<void>(
     `/experiences/${id}`,

@@ -13,6 +13,7 @@ from app.api.v1 import (
     applicant_profile,
     advisor,
     opportunities,
+    ai_quota,
 )
 
 api_router = APIRouter()
@@ -30,3 +31,4 @@ api_router.include_router(
 )
 api_router.include_router(advisor.router, prefix="/advisor", tags=["advisor"])
 api_router.include_router(opportunities.router, prefix="/opportunities", tags=["opportunities"])
+api_router.include_router(ai_quota.router, prefix="/ai-quota", tags=["ai-quota"])
