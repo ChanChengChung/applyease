@@ -349,7 +349,7 @@ export function SecurityPage() {
                       : t("security.otherDevice")}
                   </strong>{" "}
                   · {t("security.lastActive")}{" "}
-                  {new Date(item.last_seen_at).toLocaleString(dateLocale)}{" "}
+                  {new Date(item.last_seen_at + "Z").toLocaleString(dateLocale)}{" "}
                   {!item.current && (
                     <button
                       disabled={busy}

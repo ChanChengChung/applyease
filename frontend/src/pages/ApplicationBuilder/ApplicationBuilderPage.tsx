@@ -157,7 +157,7 @@ export function ApplicationBuilderPage({
               #{version.id} · {version.material_type} ·{" "}
               {version.generation_method || t("builder.ruleMethod")}
             </button>{" "}
-            <small>{new Date(version.created_at).toLocaleString()}</small>
+            <small>{new Date(version.created_at + "Z").toLocaleString()}</small>
             <button
               type="button"
               className="history-compare"

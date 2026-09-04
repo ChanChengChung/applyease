@@ -915,7 +915,7 @@ export function TrackerPage({
                           {item.interview_review.ai_feedback?.summary && (
                             <p><strong>{t("tracker.interviewReviewAiTitle")}:</strong> {item.interview_review.ai_feedback.summary}</p>
                           )}
-                          <small>{item.interview_review.completed_at ? new Date(item.interview_review.completed_at).toLocaleDateString() : ""}</small>
+                          <small>{item.interview_review.completed_at ? new Date(item.interview_review.completed_at + "Z").toLocaleDateString() : ""}</small>
                         </div>
                       )}
                       {reviewing === item.id && (
