@@ -9,12 +9,9 @@ export interface NavItem {
   id: PageId;
   labelKey: string;
   icon: React.ReactNode;
+  descriptionKey?: string;
+  step?: string;
 }
-
-type NavGroup = {
-  labelKey: string;
-  items: NavItem[];
-};
 
 const ICON_PROPS = {
   width: 20,
@@ -94,13 +91,10 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const NAV_GROUPS: NavGroup[] = [
-  { labelKey: "nav.foundation", items: [NAV_ITEMS[0]] },
-  { labelKey: "nav.discovery", items: NAV_ITEMS.slice(2, 3) },
-  // Keep the application builder first, then surface tracking before the
-  // learning/reinforcement plan in the ongoing preparation workflow.
-  { labelKey: "nav.prepare", items: [NAV_ITEMS[3]] },
-  { labelKey: "nav.manage", items: [NAV_ITEMS[5], NAV_ITEMS[4]] },
+const APPLICATION_STEPS: NavItem[] = [
+  { ...NAV_ITEMS[0], step: "01", descriptionKey: "nav.profileSub" },
+  { ...NAV_ITEMS[2], step: "02", descriptionKey: "nav.opportunityHubSub" },
+  { ...NAV_ITEMS[3], step: "03", descriptionKey: "nav.builderSub" },
 ];
 
 interface SidebarProps {
@@ -266,36 +260,93 @@ export function Sidebar({
 
         {/* Scrollable nav area */}
         <nav className="sidebar-nav" aria-label={t("nav.pages")}>
-          <p className="sidebar-journey-label">{t("nav.journey")}</p>
-          {NAV_GROUPS.map((group) => (
-            <section className="sidebar-nav-group" key={group.labelKey}>
-              {!collapsed && <p>{t(group.labelKey)}</p>}
-              <ul role="list">
-                {group.items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      ref={activePage === item.id ? activeRef : undefined}
-                      className={`sidebar-link ${activePage === item.id ? "active" : ""}`}
-                      onClick={() => handleNavigate(item.id)}
-                      aria-current={activePage === item.id ? "page" : undefined}
-                      title={t(item.labelKey)}
-                    >
-                      <span className="link-icon" aria-hidden="true">
-                        {item.icon}
+          {!collapsed && <p className="sidebar-journey-label">{t("nav.journey")}</p>}
+
+          <button
+            type="button"
+            className={`sidebar-overview-link ${activePage === "dashboard" ? "active" : ""}`}
+            onClick={() => handleNavigate("dashboard")}
+            aria-current={activePage === "dashboard" ? "page" : undefined}
+            title={t("nav.dashboard")}
+          >
+            <span className="link-icon" aria-hidden="true">{NAV_ITEMS[1].icon}</span>
+            {!collapsed && <span>{t("nav.dashboard")}</span>}
+          </button>
+
+          <section className="sidebar-primary-section" aria-label={t("nav.coreWorkspace")}>
+            {!collapsed && <p>{t("nav.coreWorkspace")}</p>}
+            <button
+              type="button"
+              ref={activePage === "tracker" ? activeRef : undefined}
+              className={`sidebar-primary-card ${activePage === "tracker" ? "active" : ""}`}
+              onClick={() => handleNavigate("tracker")}
+              aria-current={activePage === "tracker" ? "page" : undefined}
+              title={t("nav.tracker")}
+            >
+              <span className="sidebar-primary-icon" aria-hidden="true">{NAV_ITEMS[5].icon}</span>
+              {!collapsed && (
+                <span className="sidebar-primary-copy">
+                  <strong>{t("nav.tracker")}</strong>
+                  <small>{t("nav.trackerSub")}</small>
+                </span>
+              )}
+              {!collapsed && <span className="sidebar-primary-arrow" aria-hidden="true">→</span>}
+            </button>
+          </section>
+
+          <section className="sidebar-process" aria-label={t("nav.applicationPath")}>
+            {!collapsed && (
+              <div className="sidebar-section-heading">
+                <p>{t("nav.applicationPath")}</p>
+                <span>{t("nav.applicationPathHint")}</span>
+              </div>
+            )}
+            <ol>
+              {APPLICATION_STEPS.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    ref={activePage === item.id ? activeRef : undefined}
+                    className={`sidebar-step-link ${activePage === item.id ? "active" : ""}`}
+                    onClick={() => handleNavigate(item.id)}
+                    aria-current={activePage === item.id ? "step" : undefined}
+                    title={t(item.labelKey)}
+                  >
+                    <span className="sidebar-step-marker" aria-hidden="true">{collapsed ? item.icon : item.step}</span>
+                    {!collapsed && (
+                      <span className="sidebar-step-copy">
+                        <strong>{t(item.labelKey)}</strong>
+                        {item.descriptionKey && <small>{t(item.descriptionKey)}</small>}
                       </span>
-                      {!collapsed && (
-                        <span className="link-label">{t(item.labelKey)}</span>
-                      )}
-                      {activePage === item.id && !collapsed && (
-                        <span className="link-active-dot" aria-hidden="true" />
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="sidebar-growth" aria-label={t("nav.growthPath")}>
+            {!collapsed && <p>{t("nav.growthPath")}</p>}
+            <button
+              type="button"
+              ref={activePage === "resources" ? activeRef : undefined}
+              className={`sidebar-growth-card ${activePage === "resources" ? "active" : ""}`}
+              onClick={() => handleNavigate("resources")}
+              aria-current={activePage === "resources" ? "page" : undefined}
+              title={t("nav.resources")}
+            >
+              <span className="sidebar-growth-icon" aria-hidden="true">{NAV_ITEMS[4].icon}</span>
+              {!collapsed && (
+                <span className="sidebar-growth-copy">
+                  <span className="sidebar-growth-title">
+                    <strong>{t("nav.resources")}</strong>
+                    <em>{t("nav.forAllStages")}</em>
+                  </span>
+                  <small>{t("nav.resourcesSub")}</small>
+                </span>
+              )}
+            </button>
+          </section>
         </nav>
 
         {/* Sliding active indicator */}

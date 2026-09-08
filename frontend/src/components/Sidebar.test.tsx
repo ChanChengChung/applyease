@@ -79,4 +79,21 @@ describe("Sidebar return and account controls", () => {
     expect(screen.getByRole("menuitem", { name: /AI Response Quality|AI 生成回答质量|AI 生成回答品質/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /Choose a starting point|重新选择起点|重新選擇起點/ })).toBeInTheDocument();
   });
+
+  it("presents tracking as the core workspace and separates growth from the application path", () => {
+    renderWithProviders(
+      <Sidebar
+        activePage="tracker"
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        authRequired={false}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: /CORE WORKSPACE|核心工作区|核心工作區/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /APPLICATION PATH|申请流程|申請流程/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /GROWTH & PREPARATION|成长与准备|成長與準備/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Tracker|申请追踪|申請追蹤/i })).toHaveAttribute("aria-current", "page");
+  });
 });
