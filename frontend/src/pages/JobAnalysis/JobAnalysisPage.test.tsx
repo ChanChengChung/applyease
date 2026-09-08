@@ -200,7 +200,7 @@ describe("JobAnalysisPage", () => {
     expect(screen.getByText("申请证据地图")).toBeInTheDocument();
     expect(screen.getByText("由 ML Project 支持")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "为这些缺口生成补强计划" }),
+      screen.queryByRole("button", { name: "前往补强计划" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "加入职位工作台" }));
     expect(api.saveAnalyzedJob).toHaveBeenCalledWith({
@@ -213,10 +213,10 @@ describe("JobAnalysisPage", () => {
       qualifications: [],
     });
     expect(
-      await screen.findByRole("button", { name: "为这些缺口生成补强计划" }),
+      await screen.findByRole("button", { name: "前往补强计划" }),
     ).toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "为这些缺口生成补强计划" }),
+      screen.getByRole("button", { name: "前往补强计划" }),
     );
     expect(onOpenResourcePlan).toHaveBeenCalledWith({
       id: 3,
