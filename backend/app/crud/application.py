@@ -105,3 +105,18 @@ def save_answer(db: Session, question: ApplicationQuestion, answer: dict):
     db.refresh(question)
 
     return question
+
+
+def save_question_metadata(
+    db: Session, question: ApplicationQuestion, *, answer_tone: str, desired_content: str
+):
+    """Persist manual-answer preferences together with the question draft."""
+    question.answer = {
+        "metadata": {
+            "answer_tone": answer_tone,
+            "desired_content": desired_content,
+        }
+    }
+    db.commit()
+    db.refresh(question)
+    return question

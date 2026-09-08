@@ -23,7 +23,9 @@ from app.services.opportunity_service import discover_opportunities
 router = APIRouter()
 
 
-def _import_reviewed_opportunity(search_id: int, opportunity_index: int, db: Session):
+def _import_reviewed_opportunity(
+    search_id: int, opportunity_index: int, db: Session, *, commit: bool = True
+):
     """Create an analysed job only from a verified, reviewed radar result."""
     search = opportunity_crud.get(db, search_id)
     if not search:
@@ -63,6 +65,7 @@ def _import_reviewed_opportunity(search_id: int, opportunity_index: int, db: Ses
         )
     return job_crud.create(
         db,
+        commit=commit,
         title=title,
         company=company,
         description=description,
@@ -161,22 +164,26 @@ def import_and_track_opportunity(
     Tracking starts at ``saved``: importing a role is an expression of intent,
     never a claim that an application was submitted.
     """
-    job = _import_reviewed_opportunity(search_id, opportunity_index, db)
-    # Promotion into the role-library is deliberately tied to this explicit
-    # review-and-track action; search results and ordinary analysis saves do
-    # not appear in folders prematurely.
-    job.library_saved = True
-    db.commit()
-    db.refresh(job)
-    user_id = db.info.get("current_user_id")
-    tracker = tracker_crud.get_by_job(db, user_id, job.id)
-    if tracker is None:
-        tracker = tracker_crud.create(
-            db,
-            company=job.company or "Unknown company",
-            role=job.title or "Untitled role",
-            job_id=job.id,
-            status="saved",
-            notes="Imported from a reviewed Opportunity Radar result.",
-        )
+    try:
+        # The reviewed role and its tracker entry are one user action.  Keep
+        # them in a single transaction so a failed tracker write cannot leave
+        # a half-imported role in the workspace or role-library.
+        job = _import_reviewed_opportunity(search_id, opportunity_index, db, commit=False)
+        job_crud.set_library_saved(db, job, commit=False)
+        user_id = db.info.get("current_user_id")
+        tracker = tracker_crud.get_by_job(db, user_id, job.id)
+        if tracker is None:
+            tracker = tracker_crud.create(
+                db,
+                commit=False,
+                company=job.company or "Unknown company",
+                role=job.title or "Untitled role",
+                job_id=job.id,
+                status="saved",
+                notes="Imported from a reviewed Opportunity Radar result.",
+            )
+        tracker_crud.commit_import_and_track(db, job, tracker)
+    except Exception:
+        tracker_crud.rollback_import_and_track(db)
+        raise
     return OpportunityImportTrackedRead(job=job, tracker=serialize_tracker(tracker))

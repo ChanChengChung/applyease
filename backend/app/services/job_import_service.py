@@ -379,7 +379,10 @@ def import_public_job_page(raw_url: str) -> dict[str, str | bool]:
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:
-                        raise ValueError("The job page redirected without a destination URL")
+                        raise ValueError(
+                            "Redirecting job pages need a final public HTTPS URL; "
+                            "open the final destination and try again"
+                        )
                     url = _public_https_url(urljoin(url, location))
                     continue
 

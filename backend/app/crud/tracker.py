@@ -72,16 +72,28 @@ def get_by_job(db: Session, user_id: int | None, job_id: int) -> TrackedApplicat
     )
 
 
-def create(db: Session, **values):
+def create(db: Session, *, commit: bool = True, **values):
     item = TrackedApplication(**values)
 
     db.add(item)
-
-    db.commit()
-
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
 
     return item
+
+
+def commit_import_and_track(db: Session, job, tracker: TrackedApplication) -> None:
+    """Atomically persist the reviewed role and its tracker entry."""
+    db.commit()
+    db.refresh(job)
+    db.refresh(tracker)
+
+
+def rollback_import_and_track(db: Session) -> None:
+    db.rollback()
 
 
 def update(db: Session, item: TrackedApplication, values: dict):

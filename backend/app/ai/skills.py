@@ -55,3 +55,15 @@ KNOWN_SKILLS = [
     "Kubernetes",
     "AWS",
 ]
+
+# These phrases are useful tags for discovery and resource search, but they
+# describe a career domain rather than a concrete, independently verifiable
+# technical skill.  Job matching must not turn a sentence such as
+# "Python is required for quantitative research" into a fake missing
+# "Quantitative Research" skill gap.
+CAREER_DOMAIN_TERMS = {
+    "Quantitative Research",
+    "Market Making",
+}
+
+JOB_SKILLS = [skill for skill in KNOWN_SKILLS if skill not in CAREER_DOMAIN_TERMS]

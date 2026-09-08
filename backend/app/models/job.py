@@ -20,7 +20,9 @@ class Job(Base):
     company: Mapped[str] = mapped_column(String(200), default="")
 
     # Preserve the public posting URL so tracked applications can reopen it.
-    source_url: Mapped[str] = mapped_column(String(2048), default="")
+    source_url: Mapped[str] = mapped_column(
+        String(2048), default="", server_default="", nullable=False
+    )
 
     description: Mapped[str] = mapped_column(Text)
 
@@ -35,7 +37,9 @@ class Job(Base):
     # Only roles explicitly reviewed/imported from Opportunity Radar are
     # promoted into the role-library folders. Preview and manually saved
     # analyses remain private workspace drafts until that decision is made.
-    library_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    library_saved: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

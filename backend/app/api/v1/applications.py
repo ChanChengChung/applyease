@@ -271,14 +271,12 @@ def create_manual_question(payload: ManualQuestionCreate, db: Session = Depends(
         required=payload.required,
     )
     question = application_crud.list_questions(db, application.id)[-1]
-    question.answer = {
-        "metadata": {
-            "answer_tone": payload.answer_tone,
-            "desired_content": payload.desired_content,
-        }
-    }
-    db.commit()
-    db.refresh(question)
+    application_crud.save_question_metadata(
+        db,
+        question,
+        answer_tone=payload.answer_tone,
+        desired_content=payload.desired_content,
+    )
     return _application_payload(application, application_crud.list_questions(db, application.id))
 
 

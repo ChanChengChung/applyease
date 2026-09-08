@@ -47,7 +47,7 @@ def test_resource_recommendations_follow_job_gaps():
         "/api/v1/jobs/analyze",
         json={
             "title": "Quant Intern",
-            "description": "Python and Quantitative Research required; C++ is required.",
+            "description": "Python and OCaml are required; C++ is required.",
         },
     ).json()
 
@@ -59,7 +59,7 @@ def test_resource_recommendations_follow_job_gaps():
 
     assert resources
 
-    assert any("Quantitative Research" in item["skills"] for item in resources)
+    assert any("OCaml" in item["skills"] for item in resources)
 
     assert all(item["project"]["estimated_days"] >= 1 for item in resources)
     assert all(item["match_level"] in {"very_high", "high", "fair", "low"} for item in resources)

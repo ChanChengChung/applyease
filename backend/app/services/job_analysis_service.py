@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from app.models.experience import Experience
 from app.models.job import Job
 from app.schemas.job import JobAnalyzeRequest
-from app.ai.skills import KNOWN_SKILLS
+from app.ai.skills import JOB_SKILLS
 from app.schemas.job import EligibilityCheck, Evidence, JobRead, MatchReport
 _STOPWORDS = {
     "the",
@@ -216,82 +216,68 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         for line in description.splitlines()
         if line.strip()
     ]
-
-    skills = [skill for skill in KNOWN_SKILLS if _contains(description, skill)]
-
+    skills = [skill for skill in JOB_SKILLS if _contains(description, skill)]
     required: list[str] = []
-
     preferred: list[str] = []
-
     responsibilities: list[str] = []
-
     qualifications: list[str] = []
 
     for line in lines:
-        lower = line.casefold()
+        # Required, preferred and responsibility content frequently share a
+        # line. Splitting clauses prevents a later “preferred” from demoting
+        # an earlier “required” skill.
+        clauses = [
+            clause.strip()
+            for clause in re.split(r"(?<=[.!?])\s+|[;|]", line)
+            if clause.strip()
+        ]
+        for clause in clauses:
+            lower = clause.casefold()
+            is_required = any(
+                word in lower
+                for word in ("required", "must have", "must-have", "essential", "minimum")
+            )
+            is_preferred = any(
+                word in lower
+                for word in ("preferred", "nice to have", "plus", "bonus")
+            )
+            if is_required:
+                required.append(clause)
+            if is_preferred:
+                preferred.append(clause)
+            if not is_required and not is_preferred and any(
+                word in lower
+                for word in (
+                    "responsib", "develop", "build", "design", "analy", "research", "implement"
+                )
+            ):
+                responsibilities.append(clause)
+            elif not is_required and not is_preferred and any(
+                word in lower
+                for word in ("degree", "qualification", "experience", "eligible", "enrolled")
+            ):
+                qualifications.append(clause)
 
-        is_required = any(
-            word in lower for word in ["required", "must have", "must-have", "essential", "minimum"]
-        )
-        is_preferred = any(
-            word in lower for word in ["preferred", "nice to have", "plus", "bonus"]
-        )
-
-        if is_required:
-            required.append(line)
-
-        if is_preferred:
-            preferred.append(line)
-
-        if not is_required and not is_preferred and any(
-            word in lower
-            for word in [
-                "responsib",
-                "develop",
-                "build",
-                "design",
-                "analy",
-                "research",
-                "implement",
-            ]
-        ):
-            responsibilities.append(line)
-
-        elif not is_required and not is_preferred and any(
-            word in lower
-            for word in ["degree", "qualification", "experience", "eligible", "enrolled"]
-        ):
-            qualifications.append(line)
     preferred_skill_names = [
-        skill for skill in skills if any(_skill_in_preferred_context(line, skill) for line in preferred)
+        skill for skill in skills if any(_contains(clause, skill) for clause in preferred)
     ]
-
-    # Prefer skills found in explicit requirement/technology context.  This
-    # catches statements such as “OCaml (our primary development language)”
-    # while avoiding incidental mentions in a marketing paragraph.  Keep the
-    # historical fallback for postings that contain no recognisable context.
     required_context_lines = [
-        line
-        for line in lines
-        if any(marker in line.casefold() for marker in _REQUIRED_SKILL_CONTEXT)
+        clause
+        for clause in [*required, *responsibilities, *qualifications]
+        if any(marker in clause.casefold() for marker in _REQUIRED_SKILL_CONTEXT)
     ]
     required_skill_names = [
         skill
         for skill in skills
-        if any(_contains(line, skill) for line in required_context_lines)
+        if any(_contains(clause, skill) for clause in required_context_lines)
         and skill not in preferred_skill_names
     ]
     if not required_skill_names:
-        # Do not promote every technology mentioned in an unstructured posting
-        # to a requirement.  Only structured requirement/qualification/
-        # responsibility lines are a safe fallback; otherwise the report keeps
-        # the requirement set empty and explains that no explicit skills were
-        # found instead of manufacturing a match gap.
         structured_lines = [*required, *qualifications, *responsibilities]
         required_skill_names = [
             skill
             for skill in skills
-            if any(_contains(line, skill) for line in structured_lines)
+            if any(_contains(clause, skill) for clause in structured_lines)
             and skill not in preferred_skill_names
         ]
 
@@ -327,7 +313,21 @@ def _job_read_with_resolved_skills(
     persisted JSON there would make the report say “OCaml is missing” while the
     required-skills section still showed only the stale Python list.
     """
-    payload = JobRead.model_validate(job)
+    payload = JobRead.model_validate(
+        {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "description": job.description,
+            "source_url": getattr(job, "source_url", None) or "",
+            "required_skills": job.required_skills or [],
+            "preferred_skills": job.preferred_skills or [],
+            "responsibilities": job.responsibilities or [],
+            "qualifications": job.qualifications or [],
+            "library_saved": getattr(job, "library_saved", False),
+            "created_at": job.created_at,
+        }
+    )
     payload.required_skills = required
     payload.preferred_skills = preferred
     return payload

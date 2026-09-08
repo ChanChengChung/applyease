@@ -77,6 +77,18 @@ def test_rule_extractor_deduplicates_and_classifies_preferred_lines():
     assert result["responsibilities"] == ["Build data pipelines"]
 
 
+def test_rule_extractor_does_not_turn_career_domains_into_skill_gaps():
+    result = extract_job_requirements(
+        "Python and C++ are required for quantitative research and market making. "
+        "OCaml experience is preferred."
+    )
+
+    assert result["required_skills"] == ["Python", "C++"]
+    assert result["preferred_skills"] == ["OCaml"]
+    assert "Quantitative Research" not in result["required_skills"]
+    assert "Market Making" not in result["required_skills"]
+
+
 def test_saved_analysis_is_augmented_with_explicit_language_requirements():
     """Older saved/LLM output must not hide a required language from the report."""
     job = Job(

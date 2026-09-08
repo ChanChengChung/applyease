@@ -24,12 +24,26 @@ def list_recent(db: Session, user_id: int | None, *, limit: int = 30) -> list[Jo
     )
 
 
-def create(db: Session, **values):
+def create(db: Session, *, commit: bool = True, **values):
     item = Job(**values)
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
     return item
+
+
+def set_library_saved(db: Session, job: Job, *, saved: bool = True, commit: bool = True) -> Job:
+    """Promote a reviewed role without exposing transaction details to APIs."""
+    job.library_saved = saved
+    if commit:
+        db.commit()
+        db.refresh(job)
+    else:
+        db.flush()
+    return job
 
 
 def delete_for_user(db: Session, job_id: int, user_id: int | None) -> bool:

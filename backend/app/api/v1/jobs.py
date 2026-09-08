@@ -201,10 +201,7 @@ def promote_job_to_library(job_id: int, db: Session = Depends(get_db)):
     job = job_crud.get_for_user(db, job_id, db.info.get("current_user_id"))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    job.library_saved = True
-    db.commit()
-    db.refresh(job)
-    return job
+    return job_crud.set_library_saved(db, job)
 
 
 @router.get("/{job_id}", response_model=JobRead)
