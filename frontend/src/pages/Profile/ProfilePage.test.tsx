@@ -206,6 +206,38 @@ describe("ProfilePage", () => {
     );
   });
 
+  it("does not show the CV parsing banner while confirming selected experiences", async () => {
+    const user = userEvent.setup();
+    let finishBulkConfirmation: ((value: {
+      updated: number;
+      missing_ids: number[];
+    }) => void) | undefined;
+    api.bulkConfirmExperiences.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishBulkConfirmation = resolve;
+        }),
+    );
+
+    renderWithProviders(<ProfilePage />);
+    await screen.findByText("项目与竞赛");
+    await openProjectFolder(user);
+    await user.click(
+      screen.getByRole("checkbox", { name: "选择：AI Developer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "确认已选（1）" }));
+
+    await waitFor(() =>
+      expect(api.bulkConfirmExperiences).toHaveBeenCalledWith([1]),
+    );
+    expect(screen.queryByText("正在解析 CV...")).not.toBeInTheDocument();
+
+    finishBulkConfirmation?.({ updated: 1, missing_ids: [] });
+    await waitFor(() =>
+      expect(screen.getByText("已批量确认 1 条经历")).toBeInTheDocument(),
+    );
+  });
+
   it("shows a duplicate comparison and lets the user replace the original", async () => {
     const user = userEvent.setup();
     api.createExperience.mockRejectedValue(

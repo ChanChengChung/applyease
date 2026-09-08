@@ -59,6 +59,8 @@ export function ProfilePage({
 
   const [busy, setBusy] = useState(false);
 
+  const [isParsingCv, setIsParsingCv] = useState(false);
+
   const [searchInput, setSearchInput] = useState("");
 
   const [query, setQuery] = useState("");
@@ -146,6 +148,7 @@ export function ProfilePage({
 
   const handleUpload = async (file: File) => {
     setBusy(true);
+    setIsParsingCv(true);
     setStatus(t("profile.parsing"));
     try {
       const result = await uploadCV(file);
@@ -160,6 +163,7 @@ export function ProfilePage({
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("profile.parsed"));
     } finally {
+      setIsParsingCv(false);
       setBusy(false);
     }
   };
@@ -411,9 +415,9 @@ export function ProfilePage({
           <h1>{t("profile.hero.title")}</h1>
           <p className="sub">{t("profile.hero.sub")}</p>
           <div
-            className={`experience-intake ${busy ? "experience-intake-parsing" : ""}`}
+            className={`experience-intake ${isParsingCv ? "experience-intake-parsing" : ""}`}
             aria-label={t("profile.intakeLabel")}
-            aria-busy={busy}
+            aria-busy={isParsingCv}
           >
             <div className="experience-intake-copy">
               <span aria-hidden="true">01</span>
@@ -439,7 +443,7 @@ export function ProfilePage({
               </button>
             </div>
           </div>
-          {busy ? (
+          {isParsingCv ? (
             <div className="cv-parsing-banner" role="status" aria-live="polite">
               <span className="cv-parsing-spinner" aria-hidden="true" />
               <span className="cv-parsing-copy">
