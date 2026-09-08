@@ -17,13 +17,14 @@ class StarterLearningPlan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, unique=True
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     interest: Mapped[str] = mapped_column(Text)
     focus: Mapped[str] = mapped_column(String(300))
     headline: Mapped[str] = mapped_column(Text)
     first_action: Mapped[str] = mapped_column(Text)
     milestones: Mapped[list] = mapped_column(JSON, default=list)
+    milestone_sections: Mapped[dict] = mapped_column(JSON, default=dict)
     resource_ids: Mapped[list] = mapped_column(JSON, default=list)
     used_fallback: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(

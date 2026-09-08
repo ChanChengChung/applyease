@@ -75,3 +75,67 @@ def test_rule_extractor_deduplicates_and_classifies_preferred_lines():
     assert result["preferred_skills"] == ["Python", "Docker"]
 
     assert result["responsibilities"] == ["Build data pipelines"]
+
+
+def test_saved_analysis_is_augmented_with_explicit_language_requirements():
+    """Older saved/LLM output must not hide a required language from the report."""
+    job = Job(
+        id=102,
+        title="Software Engineer Internship",
+        company="Jane Street",
+        description=(
+            "As a Software Engineering intern, you'll use OCaml (our primary development "
+            "language) in your day to day work. Some teams also use Python."
+        ),
+        # Simulate the persisted analysis that previously contained only Python.
+        required_skills=["Python"],
+        preferred_skills=[],
+        responsibilities=[],
+        qualifications=[],
+    )
+    job.created_at = datetime.now(timezone.utc)
+    experience = Experience(
+        id=202,
+        title="Python project",
+        organization="HKU",
+        description="Built a data pipeline with Python.",
+        skills=["Python"],
+        achievements=[],
+        confirmed=True,
+    )
+
+    report = build_match_report(job, [experience])
+
+    assert report.matched_required_skills == ["Python"]
+    assert "OCaml" in report.missing_required_skills
+
+
+def test_skill_matching_uses_english_word_boundaries():
+    job = Job(
+        id=103,
+        title="Data role",
+        company="Example",
+        description="Python and C++ required.",
+        required_skills=["C++", "Python"],
+        preferred_skills=[],
+        responsibilities=[],
+        qualifications=[],
+    )
+    job.created_at = datetime.now(timezone.utc)
+    report = build_match_report(
+        job,
+        [
+            Experience(
+                id=203,
+                title="Candidate profile",
+                organization="Example",
+                description="Candidate data analysis experience.",
+                skills=[],
+                achievements=[],
+                confirmed=True,
+            )
+        ],
+    )
+
+    assert report.matched_required_skills == []
+    assert set(report.missing_required_skills) == {"C++", "Python"}

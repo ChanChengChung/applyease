@@ -61,7 +61,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
 
     ollama_model: str = "qwen3:4b"
-    rag_embedding_model: str = "nomic-embed-text"
+    # Chinese-capable multilingual embedding for mixed Chinese/English CVs.
+    # Pull it with `ollama pull bge-small-zh`; retrieval has a deterministic
+    # offline fallback when the model is unavailable.
+    rag_embedding_model: str = "bge-small-zh"
     milvus_uri: str = "http://localhost:19530"
     rag_generation_enabled: bool = True
 

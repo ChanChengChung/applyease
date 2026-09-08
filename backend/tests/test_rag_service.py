@@ -17,7 +17,12 @@ from app.db.session import Base, SessionLocal
 from app.models.document import Document
 from app.models.experience import Experience
 from app.services import rag_service
-from app.services.rag_service import format_context, retrieve_context, retrieve_user_context
+from app.services.rag_service import (
+    CHUNK_MAX_CHARS,
+    format_context,
+    retrieve_context,
+    retrieve_user_context,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -100,6 +105,17 @@ def test_retrieve_context_ranks_relevant_experience_first():
         labels = [label for label, _text, _score in results]
         # The Kubernetes experience must be the top hit for a Kubernetes query.
         assert "Kubernetes" in labels[0]
+
+
+def test_evidence_chunks_are_bounded_and_overlap():
+    text = "。".join([f"证据句子 {index} 包含可核验细节" for index in range(80)])
+    chunks = rag_service._chunk_text(text)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= CHUNK_MAX_CHARS for chunk in chunks)
+    # The overlap is observable when a hard boundary is required.
+    hard = "x" * (CHUNK_MAX_CHARS + 120)
+    hard_chunks = rag_service._chunk_text(hard)
+    assert hard_chunks[0][-60:] == hard_chunks[1][:60]
 
 
 def test_retrieve_context_scoped_to_requesting_user():
@@ -258,10 +274,11 @@ def test_milvus_index_is_tenant_scoped_and_refreshes_stale_passages(monkeypatch)
 
     client = FakeMilvusClient.latest
     assert result and "Kubernetes" in result[0][0]
-    assert client.query_filter == "user_id == 5010"
-    assert client.search_filter == "user_id == 5010"
+    assert client.query_filter == "user_id == 5010 and confirmed == true"
+    assert client.search_filter == "user_id == 5010 and confirmed == true"
     assert client.deleted == [42]
     assert client.records and all(record["user_id"] == 5010 for record in client.records)
+    assert all(record["confirmed"] is True for record in client.records)
     assert rag_service._passage_id(5010, "same", "text") != rag_service._passage_id(
         5011, "same", "text"
     )

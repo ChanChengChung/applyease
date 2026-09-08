@@ -184,13 +184,34 @@ def resume_lines_for_export(
 
     ordered.extend(name for name, _ in sections if name not in ordered)
 
-    lines = [line for name in ordered if name not in hidden for line in by_name[name]]
+    output_language = str((record.content or {}).get("output_language", "en"))
+    lines = [
+        _normalize_resume_line(line, output_language)
+        for name in ordered
+        if name not in hidden
+        for line in by_name[name]
+    ]
 
     if not lines:
 
         raise ValueError("Select at least one resume section before exporting")
 
     return lines
+
+
+def _normalize_resume_line(line: str, output_language: str = "en") -> str:
+    """Normalize legacy labels only for English output.
+
+    Material generation stores the requested output language.  Translating a
+    Chinese resume to English during preview/export made the language selector
+    appear ineffective, so non-English material keeps its selected labels.
+    """
+    if output_language != "en":
+        return line
+    normalized = re.sub(r"^(目标职位|目標職位)\s*:", "Target Role:", line)
+    normalized = re.sub(r"^公司\s*:", "Company:", normalized)
+    normalized = re.sub(r"^(相关经历|相關經歷)\s*$", "SELECTED EXPERIENCE", normalized)
+    return re.sub(r"^技能\s*:", "Skills:", normalized)
 
 
 def _is_heading(line: str) -> bool:

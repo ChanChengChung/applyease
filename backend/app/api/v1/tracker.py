@@ -76,8 +76,20 @@ def summary(db: Session = Depends(get_db)):
 
 
 @router.get("/reminders", response_model=list[TrackerReminder])
-def reminders(days: int = Query(default=14, ge=1, le=90), db: Session = Depends(get_db)):
-    return build_reminders(tracker_crud.list_all(db, limit=500), days=days)
+def reminders(
+    days: int = Query(default=14, ge=1, le=3650),
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+):
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date cannot be later than to_date")
+    return build_reminders(
+        tracker_crud.list_all(db, limit=500),
+        days=days,
+        from_date=from_date,
+        to_date=to_date,
+    )
 
 
 @router.get("/{application_id}/workspace", response_model=ApplicationWorkspaceRead)
@@ -220,9 +232,23 @@ def coach_interview_review(
 
 @router.delete("/{application_id}", status_code=204)
 def delete_application(application_id: int, db: Session = Depends(get_db)):
-    item = tracker_crud.get(db, application_id)
+    """Delete exactly one application record, identified by its record id.
+
+    A linked record additionally owns one target-role workspace. Cleanup is
+    keyed by ``job_id`` (never by company), so two roles at the same employer
+    cannot be removed together.
+    """
+    user_id = db.info.get("current_user_id")
+    item = tracker_crud.get_for_user(db, application_id, user_id)
 
     if not item:
 
         raise HTTPException(status_code=404, detail="Tracked application not found")
-    tracker_crud.delete(db, item)
+    # A linked tracker row is the user's entry point to a complete role
+    # workspace. Remove every role-specific artifact atomically; unlinked
+    # manual records only need the tracker row removed.
+    if item.job_id:
+        if not job_crud.delete_for_user(db, item.job_id, user_id):
+            raise HTTPException(status_code=404, detail="Linked job not found")
+    else:
+        tracker_crud.delete_for_user(db, item.id, user_id)

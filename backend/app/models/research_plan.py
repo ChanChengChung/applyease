@@ -13,10 +13,20 @@ class ResearchPlan(Base):
     job_id: Mapped[int] = mapped_column(
         ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # A role-specific reinforcement plan can be generated from any saved
+    # starter plan.  Keep this nullable so plans created before this linkage
+    # was introduced remain readable and are shown as unlinked in the UI.
+    starter_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("starter_learning_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     profile_summary: Mapped[str] = mapped_column(Text, default="")
     gaps: Mapped[list] = mapped_column(JSON, default=list)
     method: Mapped[list] = mapped_column(JSON, default=list)
     sources: Mapped[list] = mapped_column(JSON, default=list)
+    # Explicit role-reinforcement directions selected by the user.
+    focuses: Mapped[list] = mapped_column(JSON, default=list)
     used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
     searched_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

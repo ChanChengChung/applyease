@@ -5,6 +5,8 @@ export type QuestionMetadata = {
   requires_user_input?: boolean;
   limit_unit?: "characters" | "words";
   max_words?: number | null;
+  answer_tone?: "professional" | "concise" | "enthusiastic" | "technical" | "reflective";
+  desired_content?: string;
 };
 export type ApplicationQuestion = {
   id: number;

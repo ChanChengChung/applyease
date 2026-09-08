@@ -98,3 +98,40 @@ def test_calendar_requires_dates_and_respects_owner_isolation():
         ).status_code
         == 404
     )
+
+
+def test_reminders_accept_explicit_past_and_future_calendar_range():
+    token = _token("stage16-calendar-range@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    first = client.post(
+        "/api/v1/tracker/applications",
+        headers=headers,
+        json={
+            "company": "Range Co",
+            "role": "Past role",
+            "status": "saved",
+            "deadline": "2020-01-02",
+        },
+    )
+    second = client.post(
+        "/api/v1/tracker/applications",
+        headers=headers,
+        json={
+            "company": "Range Co",
+            "role": "Future role",
+            "status": "saved",
+            "deadline": "2030-01-02",
+        },
+    )
+    assert first.status_code == second.status_code == 200
+    response = client.get(
+        "/api/v1/tracker/applications/reminders?from_date=2019-01-01&to_date=2021-01-01",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert {entry["role"] for entry in response.json()} == {"Past role"}
+    invalid = client.get(
+        "/api/v1/tracker/applications/reminders?from_date=2021-01-01&to_date=2020-01-01",
+        headers=headers,
+    )
+    assert invalid.status_code == 422

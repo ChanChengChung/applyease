@@ -1,7 +1,25 @@
-import type { ResumeAppearance, ResumeTemplate } from "../types/material";
+import type { OutputLanguage, ResumeAppearance, ResumeTemplate } from "../types/material";
 import { useT } from "../i18n/LanguageProvider";
 
 export type ResumeSection = { name: string; lines: string[] };
+
+/**
+ * Resume exports are submitted to English-language ATSs by default. Older
+ * saved materials may still contain localized deterministic labels, so
+ * normalize those labels at presentation/export time without translating a
+ * user's verified titles, organisations, or evidence text.
+ */
+export function normalizeResumeLine(
+  line: string,
+  outputLanguage: OutputLanguage = "en",
+): string {
+  if (outputLanguage !== "en") return line;
+  return line
+    .replace(/^(目标职位|目標職位)\s*:/, "Target Role:")
+    .replace(/^公司\s*:/, "Company:")
+    .replace(/^(相关经历|相關經歷)\s*$/, "SELECTED EXPERIENCE")
+    .replace(/^技能\s*:/, "Skills:");
+}
 
 export function splitResumeSections(text: string): ResumeSection[] {
   const result: ResumeSection[] = [];
@@ -39,6 +57,7 @@ export function ResumePreview({
   appearance,
   order,
   hidden,
+  outputLanguage = "en",
 }: {
   text: string;
   displayName: string;
@@ -54,6 +73,7 @@ export function ResumePreview({
   appearance?: ResumeAppearance;
   order: string[];
   hidden: string[];
+  outputLanguage?: OutputLanguage;
 }) {
   const t = useT();
 
@@ -131,7 +151,7 @@ export function ResumePreview({
                       : ""
                   }
                 >
-                  {line.replace(/^[-•]\s*/, "")}
+                  {normalizeResumeLine(line.replace(/^[-•]\s*/, ""), outputLanguage)}
                 </p>
               ),
             )}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { PageFeedback } from "../../components/PageFeedback";
 import {
@@ -121,10 +121,14 @@ export function TrackerPage({
     Record<number, ApplicationWorkspace>
   >({});
 
-  const [reminderDays, setReminderDays] = useState(14);
+  const [reminderFromDate, setReminderFromDate] = useState("");
+  const [reminderToDate, setReminderToDate] = useState("");
 
   const [form, setForm] = useState<FormState>(() =>
     toForm(undefined, initialJob),
+  );
+  const [currentTarget, setCurrentTarget] = useState<NavigationJob | undefined>(
+    initialJob,
   );
 
   const [editing, setEditing] = useState<number | null>(null);
@@ -135,6 +139,9 @@ export function TrackerPage({
   const [recordView, setRecordView] = useState<"planning" | "applied">(
     "planning",
   );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const [sort, setSort] = useState<"deadline" | "created_at" | "follow_up">(
     "deadline",
@@ -145,6 +152,8 @@ export function TrackerPage({
   const [saving, setSaving] = useState(false);
 
   const [error, setError] = useState("");
+  const [createMessage, setCreateMessage] = useState("");
+  const [lastCreatedId, setLastCreatedId] = useState<number | null>(null);
   const [calendarMessage, setCalendarMessage] = useState("");
   const [reviewing, setReviewing] = useState<number | null>(null);
   const [reviewDraft, setReviewDraft] = useState<InterviewReview>(emptyReview);
@@ -170,12 +179,26 @@ export function TrackerPage({
 
   const t = useT();
   const { language } = useI18n();
+  useEffect(() => {
+    setCurrentTarget(initialJob);
+  }, [initialJob?.id, initialJob?.company, initialJob?.title]);
   const statusLabel = (status: TrackerStatus | string) =>
     t(`tracker.status.${status}`);
-  const linkedJob = (item: TrackedApplication): NavigationJob | undefined =>
-    item.job_id
-      ? { id: item.job_id, company: item.company, title: item.role }
-      : undefined;
+  const linkedJob = (item: TrackedApplication): NavigationJob | undefined => {
+    if (!item.job_id) return undefined;
+    const job = workspaceJobs.find((candidate) => candidate.id === item.job_id);
+    return {
+      id: item.job_id,
+      company: item.company,
+      title: item.role,
+      source_url: job?.source_url,
+    };
+  };
+
+  const applicationUrl = (item: TrackedApplication) => {
+    const url = linkedJob(item)?.source_url;
+    return url || `https://www.google.com/search?q=${encodeURIComponent(`${item.company} ${item.role} application`)}`;
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -185,7 +208,10 @@ export function TrackerPage({
       const [records, stats, due] = await Promise.all([
         listTracked({ status: statusFilter || undefined, sort }),
         getTrackerSummary(),
-        getTrackerReminders(reminderDays),
+        getTrackerReminders({
+          from_date: reminderFromDate || undefined,
+          to_date: reminderToDate || undefined,
+        }),
       ]);
 
       setItems(records);
@@ -212,7 +238,7 @@ export function TrackerPage({
     } finally {
       setLoading(false);
     }
-  }, [sort, statusFilter, reminderDays, t]);
+  }, [sort, statusFilter, reminderFromDate, reminderToDate, t]);
 
   useEffect(() => {
     void load();
@@ -251,9 +277,25 @@ export function TrackerPage({
     event.preventDefault();
     setSaving(true);
     setError("");
+    setCreateMessage("");
 
     try {
-      await createTracked(payload(form));
+      const created = await createTracked(payload(form));
+      if (created.job_id) {
+        setCurrentTarget({
+          id: created.job_id,
+          company: created.company,
+          title: created.role,
+        });
+      }
+      setRecordView(created.status === "saved" ? "planning" : "applied");
+      setLastCreatedId(created.id);
+      setCreateMessage(
+        t("tracker.createSuccess", {
+          company: created.company,
+          role: created.role,
+        }),
+      );
       setForm(toForm(undefined));
       await load();
     } catch (e) {
@@ -261,6 +303,13 @@ export function TrackerPage({
     } finally {
       setSaving(false);
     }
+  };
+
+  const focusCreatedRecord = () => {
+    if (!lastCreatedId) return;
+    document
+      .getElementById(`tracked-application-${lastCreatedId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const save = async (id: number) => {
@@ -279,16 +328,55 @@ export function TrackerPage({
   };
 
   const remove = async (item: TrackedApplication) => {
-    if (!window.confirm(t("tracker.deleteConfirm", { company: item.company })))
+    if (!window.confirm(t("tracker.deleteConfirm", { company: item.company, role: item.role })))
       return;
 
     setError("");
     try {
       await deleteTracked(item.id);
+      // Remove the card immediately after the server confirms deletion. This
+      // keeps the UI truthful even if refreshing the summary/reminders fails
+      // transiently after a successful DELETE.
+      setItems((current) => current.filter((value) => value.id !== item.id));
+      setWorkspaces((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      setExpandedId((current) => (current === item.id ? null : current));
       if (editing === item.id) setEditing(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("tracker.deleteFailed"));
+    }
+  };
+
+  const removeReminder = async (reminder: TrackerReminder) => {
+    const confirmed = window.confirm(
+      t("tracker.deleteReminderConfirm", { company: reminder.company, role: reminder.role }),
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      await deleteTracked(reminder.application_id);
+      setItems((current) =>
+        current.filter((value) => value.id !== reminder.application_id),
+      );
+      setWorkspaces((current) => {
+        const next = { ...current };
+        delete next[reminder.application_id];
+        return next;
+      });
+      setExpandedId((current) =>
+        current === reminder.application_id ? null : current,
+      );
+      if (editing === reminder.application_id) setEditing(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("tracker.deleteFailed"));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -466,14 +554,30 @@ export function TrackerPage({
     "rejected",
     "withdrawn",
   ];
-  const displayedItems = items.filter((item) =>
+  const filteredItems = items.filter((item) =>
     recordView === "applied"
       ? appliedStatuses.includes(item.status)
       : item.status === "saved",
   );
+  const searchedItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return filteredItems;
+    return filteredItems.filter((item) =>
+      `${item.company} ${item.role} ${item.notes}`.toLowerCase().includes(query),
+    );
+  }, [filteredItems, searchQuery]);
+  const pageSize = 4;
+  const pageCount = Math.max(1, Math.ceil(searchedItems.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const displayedItems = searchedItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const appliedCount = items.filter((item) =>
     appliedStatuses.includes(item.status),
   ).length;
+
+  useEffect(() => {
+    setPage(1);
+    setExpandedId(null);
+  }, [recordView, statusFilter, searchQuery]);
 
   return (
     <main className="product-page tracker-page">
@@ -499,7 +603,7 @@ export function TrackerPage({
           </div>
         )}
 
-        {initialJob && (
+        {currentTarget && (
           <section
             className="tracker-current-target"
             aria-label={t("tracker.currentTarget")}
@@ -510,11 +614,11 @@ export function TrackerPage({
             <div>
               <p className="section-kicker">{t("tracker.currentTarget")}</p>
               <h2>
-                {initialJob.company} · {initialJob.title}
+                {currentTarget.company} · {currentTarget.title}
               </h2>
               <p>{t("tracker.currentTargetHelp")}</p>
             </div>
-            <button type="button" onClick={() => onOpenJob?.(initialJob)}>
+            <button type="button" onClick={() => onOpenJob?.(currentTarget)}>
               <span aria-hidden="true">⌕</span>
               {t("tracker.openRoleAnalysis")}
             </button>
@@ -555,19 +659,38 @@ export function TrackerPage({
               <h2>{t("tracker.remindersTitle")}</h2>
               <p>{t("tracker.remindersHelp")}</p>
             </div>
-            <label>
-              {t("tracker.reminderRange")}
-              <select
-                aria-label={t("tracker.reminderRange")}
-                value={reminderDays}
-                onChange={(e) => setReminderDays(Number(e.target.value))}
-              >
-                <option value="7">7 {t("tracker.days")}</option>
-                <option value="14">14 {t("tracker.days")}</option>
-                <option value="30">30 {t("tracker.days")}</option>
-                <option value="90">90 {t("tracker.days")}</option>
-              </select>
-            </label>
+            <div className="tracker-reminder-calendar-filter">
+              <label>
+                {t("tracker.reminderFrom")}
+                <input
+                  aria-label={t("tracker.reminderFrom")}
+                  type="date"
+                  value={reminderFromDate}
+                  onChange={(event) => setReminderFromDate(event.target.value)}
+                />
+              </label>
+              <label>
+                {t("tracker.reminderTo")}
+                <input
+                  aria-label={t("tracker.reminderTo")}
+                  type="date"
+                  value={reminderToDate}
+                  onChange={(event) => setReminderToDate(event.target.value)}
+                />
+              </label>
+              {(reminderFromDate || reminderToDate) && (
+                <button
+                  type="button"
+                  className="secondary tracker-reminder-clear"
+                  onClick={() => {
+                    setReminderFromDate("");
+                    setReminderToDate("");
+                  }}
+                >
+                  {t("tracker.reminderClear")}
+                </button>
+              )}
+            </div>
           </div>
           {loading ? (
             <p>{t("tracker.remindersLoading")}</p>
@@ -577,14 +700,28 @@ export function TrackerPage({
             <ul className="tracker-reminder-list">
               {reminders.map((reminder) => (
                 <li key={`${reminder.application_id}-${reminder.kind}`}>
-                  <strong>
-                    {reminder.state === "overdue"
-                      ? t("tracker.reminderOverdue")
-                      : reminder.state === "today"
-                        ? t("tracker.reminderToday")
-                        : reminder.due_date}
-                  </strong>{" "}
-                  · {reminder.title}
+                  <div className="tracker-reminder-copy">
+                    <strong>
+                      {reminder.state === "overdue"
+                        ? t("tracker.reminderOverdue")
+                        : reminder.state === "today"
+                          ? t("tracker.reminderToday")
+                          : t("tracker.reminderUpcoming")}
+                    </strong>
+                    <span> · {reminder.title}</span>
+                    <small>
+                      {t("tracker.reminderDueDate")}: {reminder.due_date}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="tracker-reminder-delete"
+                    aria-label={`${t("tracker.delete")} ${reminder.company} · ${reminder.role}`}
+                    title={t("tracker.delete")}
+                    onClick={() => void removeReminder(reminder)}
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
             </ul>
@@ -633,6 +770,15 @@ export function TrackerPage({
                   const selected = workspaceJobs.find(
                     (job) => job.id === Number(event.target.value),
                   );
+                  setCurrentTarget(
+                    selected
+                      ? {
+                          id: selected.id,
+                          company: selected.company,
+                          title: selected.title,
+                        }
+                      : undefined,
+                  );
                   setForm(
                     selected
                       ? {
@@ -676,7 +822,18 @@ export function TrackerPage({
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 />
               </label>
-              <button disabled={saving || (createMode === "workspace" && !form.job_id)}>
+              {createMessage && (
+                <PageFeedback
+                  kind="success"
+                  message={createMessage}
+                  actionLabel={t("tracker.viewCreated")}
+                  onAction={focusCreatedRecord}
+                />
+              )}
+              <button
+                type="submit"
+                disabled={saving || (createMode === "workspace" && !form.job_id)}
+              >
                 {saving ? t("tracker.saving") : t("tracker.add")}
               </button>
             </div>
@@ -692,6 +849,16 @@ export function TrackerPage({
               <h2>{t("tracker.myApplications")}</h2>
             </div>
             <div className="tracker-filters">
+              <label className="tracker-search-field">
+                {t("tracker.search")}
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t("tracker.searchPlaceholder")}
+                  aria-label={t("tracker.search")}
+                />
+              </label>
               <label>
                 {t("tracker.filterStatus")}
                 <select
@@ -761,10 +928,14 @@ export function TrackerPage({
           ) : (
             displayedItems.map((item) => (
               <article
-                className={`card tracker-item tracker-application-card ${item.is_overdue ? "is-overdue" : ""} ${item.id === initialTrackerId ? "is-imported" : ""}`}
+                className={`card tracker-item tracker-application-card ${expandedId === item.id ? "is-expanded" : "is-compact"} ${item.is_overdue ? "is-overdue" : ""} ${item.id === initialTrackerId ? "is-imported" : ""}`}
                 key={item.id}
                 id={`tracked-application-${item.id}`}
                 tabIndex={-1}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("button, a, input, textarea, select")) return;
+                  setExpandedId((current) => current === item.id ? null : item.id);
+                }}
               >
                 {editing === item.id ? (
                   <>
@@ -812,6 +983,14 @@ export function TrackerPage({
                         </div>
                       </div>
                       <div className="tracker-item-actions">
+                        <a
+                          className="tracker-search-application"
+                          href={applicationUrl(item)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {t("tracker.searchApplication")}
+                        </a>
                         {item.status === "saved" && (
                           <button
                             type="button"
@@ -853,6 +1032,7 @@ export function TrackerPage({
                         </button>
                       </div>
                     </div>
+                    <div className="tracker-item-details">
                     <div className="tracker-date-rail">
                       <span className="status-badge">
                         <i aria-hidden="true" />
@@ -1008,6 +1188,7 @@ export function TrackerPage({
                         </div>
                       )}
                     </section>
+                    </div>
                     {workspaces[item.id] && (
                       <section
                         className="tracker-workspace"
@@ -1202,6 +1383,15 @@ export function TrackerPage({
                 )}
               </article>
             ))
+          )}
+          {!loading && searchedItems.length > 0 && (
+            <nav className="tracker-pagination" aria-label={t("tracker.pagination")}>
+              <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map((value) => (
+                <button key={value} type="button" className={value === currentPage ? "active" : ""} aria-current={value === currentPage ? "page" : undefined} onClick={() => setPage(value)}>{value}</button>
+              ))}
+              <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>›</button>
+            </nav>
           )}
         </section>
       </section>

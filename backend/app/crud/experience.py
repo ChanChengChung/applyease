@@ -57,6 +57,7 @@ def create(db: Session, **values):
     db.add(item)
     db.commit()
     db.refresh(item)
+    _refresh_rag_index(db, item.user_id)
     return item, False
 
 
@@ -82,12 +83,15 @@ def update(db: Session, item: Experience, values: dict):
 
     db.commit()
     db.refresh(item)
+    _refresh_rag_index(db, item.user_id)
     return item, False
 
 
 def delete(db: Session, item: Experience):
+    user_id = item.user_id
     db.delete(item)
     db.commit()
+    _refresh_rag_index(db, user_id)
 
 
 def bulk_confirm(db: Session, ids: list[int], confirmed: bool):
@@ -100,4 +104,21 @@ def bulk_confirm(db: Session, ids: list[int], confirmed: bool):
 
     db.commit()
 
+    for user_id in {item.user_id for item in records}:
+        _refresh_rag_index(db, user_id)
+
     return len(records), sorted(set(ids) - found)
+
+
+def _refresh_rag_index(db: Session, user_id: int | None) -> None:
+    """Best-effort write-time indexing; derived vectors never block CRUD."""
+    if user_id is None:
+        return
+    try:
+        from app.services.rag_service import index_user_context
+
+        index_user_context(db, int(user_id))
+    except Exception:
+        # The retrieval path reconciles stale records for deployments upgraded
+        # from older versions, while user writes remain available offline.
+        return

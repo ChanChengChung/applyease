@@ -22,6 +22,9 @@ from app.schemas.application import (
     DetectQuestionsRequest,
     FillPreviewRequest,
     FillPreviewResponse,
+    ManualQuestionCreate,
+    ManualQuestionUpdate,
+    QuestionRead,
 )
 from app.services.form_fill_service import build_fill_preview
 from app.schemas.material import MaterialContent
@@ -245,6 +248,40 @@ def latest_application(job_id: int, db: Session = Depends(get_db)):
     return _application_payload(application, application_crud.list_questions(db, application.id))
 
 
+@router.post("/questions/manual", response_model=ApplicationRead, status_code=201)
+def create_manual_question(payload: ManualQuestionCreate, db: Session = Depends(get_db)):
+    """Persist a question draft added from the material builder.
+
+    Reuse the latest imported application for the job when one exists. If the
+    user has not imported a form yet, create a lightweight application shell
+    so the manually added question still survives refresh and can later be
+    completed in Application Forms.
+    """
+    if not job_crud.get(db, payload.job_id):
+        raise HTTPException(status_code=404, detail="Job not found")
+    application = application_crud.latest_by_job(db, payload.job_id)
+    if not application:
+        application, _ = application_crud.create_with_questions(db, payload.job_id, "", [])
+    application_crud.create_question(
+        db,
+        application.id,
+        payload.question,
+        question_type=payload.question_type or "general",
+        max_characters=payload.max_characters,
+        required=payload.required,
+    )
+    question = application_crud.list_questions(db, application.id)[-1]
+    question.answer = {
+        "metadata": {
+            "answer_tone": payload.answer_tone,
+            "desired_content": payload.desired_content,
+        }
+    }
+    db.commit()
+    db.refresh(question)
+    return _application_payload(application, application_crud.list_questions(db, application.id))
+
+
 @router.post("/questions/detect-screenshot", response_model=ApplicationRead)
 async def detect_screenshot(
     job_id: int = Form(...),
@@ -359,6 +396,29 @@ def answer(
         request.answer_tone,
         request.desired_content,
     )
+
+
+@router.patch(
+    "/{application_id}/questions/{question_id}", response_model=QuestionRead
+)
+def update_manual_question(
+    application_id: int,
+    question_id: int,
+    payload: ManualQuestionUpdate,
+    db: Session = Depends(get_db),
+):
+    application = application_crud.get(db, application_id)
+    question = application_crud.get_question(db, application_id, question_id)
+    if not application or not question:
+        raise HTTPException(status_code=404, detail="Application question not found")
+    values = payload.model_dump(exclude_unset=True)
+    metadata = dict((question.answer or {}).get("metadata") or {})
+    for key in ("answer_tone", "desired_content"):
+        if key in values:
+            metadata[key] = values.pop(key)
+    if metadata:
+        question.answer = {**(question.answer or {}), "metadata": metadata}
+    return application_crud.update_question(db, question, values)
 
 
 def _run_batch_generation(

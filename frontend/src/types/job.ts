@@ -3,12 +3,14 @@ export type Job = {
   title: string;
   company: string;
   description: string;
+  source_url?: string;
 
   required_skills: string[];
   preferred_skills: string[];
 
   responsibilities: string[];
   qualifications: string[];
+  library_saved?: boolean;
   created_at: string;
 };
 export type JobImportDraft = {

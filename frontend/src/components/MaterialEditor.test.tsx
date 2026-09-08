@@ -76,4 +76,16 @@ describe("MaterialEditor", () => {
 
     expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
   });
+
+  it("does not mislabel seeded demo material as an AI rule fallback", () => {
+    renderWithProviders(
+      <MaterialEditor
+        material={{ ...material, material_type: "cover_letter", generation_method: "demo_rules" }}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/演示模板/)).toBeInTheDocument();
+    expect(screen.queryByText(/规则 fallback/)).not.toBeInTheDocument();
+  });
 });

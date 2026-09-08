@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.models.resource import LearningResource, ResourceFeedback, ResourceProgress
+from app.models.resource import LearningResource, ResourceProgress
+from app.models.resource_feedback import ResourceFeedback
 
 
 def list_all(db: Session):
@@ -19,20 +20,6 @@ def progress_map(db: Session):
 
 def get_progress(db: Session, resource_id: int):
     return db.scalar(select(ResourceProgress).where(ResourceProgress.resource_id == resource_id))
-
-
-def save_health(db: Session, resource):
-    db.commit()
-    db.refresh(resource)
-    return resource
-
-
-def create_feedback(db: Session, resource_id: int, category: str, message: str):
-    item = ResourceFeedback(resource_id=resource_id, category=category, message=message.strip())
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
 
 
 def set_completed(db: Session, resource_id: int, completed: bool):
@@ -60,3 +47,11 @@ def seed_if_empty(db: Session, catalog: list[dict]) -> None:
         db.add_all([LearningResource(**item) for item in missing])
 
         db.commit()
+
+
+def create_feedback(db: Session, resource_id: int, category: str, message: str) -> ResourceFeedback:
+    item = ResourceFeedback(resource_id=resource_id, category=category, message=message)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item

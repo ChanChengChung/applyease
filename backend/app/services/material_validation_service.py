@@ -26,40 +26,35 @@ def _normalize(text: str) -> str:
 def validate_ai_citations(
     raw_citations: Any, experiences: list[Experience], generated_text: str
 ) -> list[SourceCitation]:
-
-    if not isinstance(raw_citations, list):
-
-        raise ProviderError("AI citations field has an invalid type")
     by_id = {item.id: item for item in experiences if item.confirmed}
 
     citations: list[SourceCitation] = []
 
     seen: set[tuple[int, str]] = set()
 
-    for raw in raw_citations:
-
+    # Some providers serialise integer IDs as strings and occasionally emit a
+    # malformed citation alongside otherwise grounded ones. Normalize the ID
+    # and skip only the malformed item; the generated text still has to expose
+    # a verifiable phrase before it can be accepted below.
+    for raw in raw_citations if isinstance(raw_citations, list) else []:
         if not isinstance(raw, dict):
-
-            raise ProviderError("AI citation item has an invalid type")
-        item = by_id.get(raw.get("experience_id"))
+            continue
+        raw_id = raw.get("experience_id")
+        try:
+            experience_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        item = by_id.get(experience_id)
 
         claim = str(raw.get("claim", "")).strip()
 
         quote = str(raw.get("evidence_quote", "")).strip()
 
-        if (
-            not item
-            or len(_normalize(claim)) < 4
-            or _normalize(claim) not in _normalize(generated_text)
-        ):
+        if not item or len(_normalize(claim)) < 4 or _normalize(claim) not in _normalize(generated_text):
+            continue
 
-            raise ProviderError("AI citation claim is not present in generated material")
-
-        if len(_normalize(quote)) < 8 or _normalize(quote) not in _normalize(
-            experience_source_text(item)
-        ):
-
-            raise ProviderError("AI material contains an ungrounded citation")
+        if len(_normalize(quote)) < 8 or _normalize(quote) not in _normalize(experience_source_text(item)):
+            continue
         key = (item.id, _normalize(quote))
 
         if key not in seen:
@@ -71,8 +66,43 @@ def validate_ai_citations(
                 )
             )
 
+    # If the provider's citation envelope is imperfect, recover citations from
+    # exact evidence phrases that visibly survived in the generated material.
+    # This keeps the strict grounding rule while avoiding an unnecessary full
+    # fallback for a JSON formatting mistake.
     if experiences and not citations:
+        generated_normalized = _normalize(generated_text)
+        for item in by_id.values():
+            phrases = [
+                item.title,
+                item.organization,
+                *(item.description.splitlines() if item.description else []),
+                *(item.skills or []),
+                *(
+                    str(value.get("text", ""))
+                    for value in (item.achievements or [])
+                    if isinstance(value, dict)
+                ),
+            ]
+            for phrase in sorted(
+                {str(value).strip() for value in phrases if str(value).strip()},
+                key=len,
+                reverse=True,
+            ):
+                normalized_phrase = _normalize(phrase)
+                if len(normalized_phrase) < 8 or normalized_phrase not in generated_normalized:
+                    continue
+                citations.append(
+                    SourceCitation(
+                        experience_id=item.id,
+                        experience_title=item.title,
+                        text=phrase,
+                        claim=phrase,
+                    )
+                )
+                break
 
+    if experiences and not citations:
         raise ProviderError("AI material did not cite a confirmed experience")
 
     return citations

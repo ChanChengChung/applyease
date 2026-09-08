@@ -118,3 +118,34 @@ def test_dashboard_target_role_can_be_deleted_only_by_its_owner():
         assert db.get(GeneratedMaterial, material_id) is None
         assert db.get(ResearchPlan, plan_id) is None
         assert db.get(TrackedApplication, tracked_id) is None
+
+
+def test_tracker_delete_is_scoped_to_the_selected_role_not_company_name():
+    client = TestClient(app)
+    token = _register(client, "tracker-delete-same-company@example.com")
+    first_job = _create_job(client, token, "Research Internship")
+    second_job = _create_job(client, token, "Software Internship")
+    headers = {"Authorization": f"Bearer {token}"}
+    first = client.post(
+        "/api/v1/tracker/applications",
+        headers=headers,
+        json={"job_id": first_job, "company": "Same Company", "role": "Research Internship"},
+    )
+    second = client.post(
+        "/api/v1/tracker/applications",
+        headers=headers,
+        json={"job_id": second_job, "company": "Same Company", "role": "Software Internship"},
+    )
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+
+    deleted = client.delete(
+        f"/api/v1/tracker/applications/{first.json()['id']}", headers=headers
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    remaining = client.get("/api/v1/tracker/applications", headers=headers)
+    assert remaining.status_code == 200, remaining.text
+    assert [item["role"] for item in remaining.json()] == ["Software Internship"]
+    assert client.get(f"/api/v1/jobs/{second_job}", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/jobs/{first_job}", headers=headers).status_code == 404

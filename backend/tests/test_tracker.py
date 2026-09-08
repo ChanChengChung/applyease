@@ -107,3 +107,26 @@ def test_tracker_reuses_existing_record_for_the_same_job():
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["id"] == first.json()["id"]
+
+
+def test_deleting_linked_tracker_removes_the_role_workspace():
+    job = client.post(
+        "/api/v1/jobs/analyze",
+        json={
+            "title": "Delete cascade role",
+            "company": "Cascade Co",
+            "description": "Python experience is required for this role.",
+        },
+    ).json()
+    material = client.post(f"/api/v1/materials/resume/generate?job_id={job['id']}")
+    assert material.status_code == 200, material.text
+    tracked = client.post(
+        "/api/v1/tracker/applications",
+        json={"company": "Cascade Co", "role": "Delete cascade role", "job_id": job["id"]},
+    )
+    assert tracked.status_code == 200, tracked.text
+
+    deleted = client.delete(f"/api/v1/tracker/applications/{tracked.json()['id']}")
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(f"/api/v1/jobs/{job['id']}").status_code == 404
+    assert client.get(f"/api/v1/jobs/{job['id']}/match-report").status_code == 404

@@ -12,6 +12,7 @@ export type OpportunityMatch = {
   source_search_mode?: "ai" | "official_ats";
   source_title: string;
   source_url: string;
+  folder?: string;
 };
 
 export type OpportunitySearch = {

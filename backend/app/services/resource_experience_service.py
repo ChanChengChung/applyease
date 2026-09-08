@@ -5,7 +5,12 @@ from app.models.resource import LearningResource
 
 def experience_values_from_completed_resource(resource: LearningResource, reflection: str) -> dict:
     project = resource.project or {}
-    project_title = str(project.get("title") or resource.title).strip()[:200]
+    # The catalogue's project title is a suggested deliverable (for example,
+    # ``Containerized service``).  It is not the name of the learning project
+    # the user selected.  Keep the source resource title as the draft title so
+    # a Docker project remains recognisable as Docker instead of being silently
+    # renamed by a generic project template.
+    project_title = str(resource.title or project.get("title") or "").strip()[:200]
     task = str(project.get("task") or "").strip()
     source = f"Learning resource: {resource.title}"[:255]
     context = f"Completed a self-directed project using {resource.title} ({resource.url})."

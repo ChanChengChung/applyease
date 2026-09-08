@@ -59,18 +59,3 @@ class ResourceProgress(Base):
 
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
-
-class ResourceFeedback(Base):
-    __tablename__ = "resource_feedback"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    resource_id: Mapped[int] = mapped_column(
-        ForeignKey("learning_resources.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    category: Mapped[str] = mapped_column(String(30), default="broken_link")
-    message: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )

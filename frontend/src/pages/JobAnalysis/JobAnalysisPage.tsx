@@ -6,16 +6,20 @@ import {
   importJobUrl,
   previewManualJobAnalysis,
   previewJobAnalysis,
+  promoteJobToLibrary,
   saveAnalyzedJob,
 } from "../../services/jobApi";
+import { createTracked } from "../../services/trackerApi";
 import type { JobImportDraft, MatchReport } from "../../types/job";
 import type { NavigationJob } from "../../types/dashboard";
 import { PageFeedback } from "../../components/PageFeedback";
 import { useT } from "../../i18n/LanguageProvider";
+import { matchLevelForScore } from "../../utils/matchLevel";
 
 const JOB_ANALYSIS_SESSION_KEY = "applyease.job-analysis-draft.v1";
 
 type JobAnalysisSession = {
+  inputMode: "import" | "manual";
   title: string;
   company: string;
   description: string;
@@ -24,7 +28,8 @@ type JobAnalysisSession = {
   requiredSkillsInput: string;
   responsibilitiesInput: string;
   importedDraft: JobImportDraft | null;
-  report: MatchReport | null;
+  importedReport: MatchReport | null;
+  manualReport: MatchReport | null;
   importNeedsManualDescription: boolean;
 };
 
@@ -32,9 +37,16 @@ function readJobAnalysisSession(): JobAnalysisSession | null {
   try {
     const raw = window.sessionStorage.getItem(JOB_ANALYSIS_SESSION_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<JobAnalysisSession>;
+    const parsed = JSON.parse(raw) as Partial<JobAnalysisSession> & {
+      /** Legacy sessions stored the active report under this single key. */
+      report?: MatchReport | null;
+    };
     if (typeof parsed.title !== "string" || typeof parsed.description !== "string") return null;
     return {
+      inputMode:
+        parsed.inputMode === "import" || (!parsed.inputMode && parsed.importedDraft)
+          ? "import"
+          : "manual",
       title: parsed.title,
       company: typeof parsed.company === "string" ? parsed.company : "",
       description: parsed.description,
@@ -45,7 +57,12 @@ function readJobAnalysisSession(): JobAnalysisSession | null {
       responsibilitiesInput:
         typeof parsed.responsibilitiesInput === "string" ? parsed.responsibilitiesInput : "",
       importedDraft: parsed.importedDraft ?? null,
-      report: parsed.report ?? null,
+      importedReport:
+        parsed.importedReport ??
+        (parsed.inputMode === "import" ? (parsed.report ?? null) : null),
+      manualReport:
+        parsed.manualReport ??
+        (parsed.inputMode !== "import" ? (parsed.report ?? null) : null),
       importNeedsManualDescription: Boolean(parsed.importNeedsManualDescription),
     };
   } catch {
@@ -67,6 +84,9 @@ export function JobAnalysisPage({
   hideHero?: boolean;
 }) {
   const [restoredSession] = useState<JobAnalysisSession | null>(() => readJobAnalysisSession());
+  const [inputMode, setInputMode] = useState<"import" | "manual">(
+    () => restoredSession?.inputMode ?? "import",
+  );
   const [title, setTitle] = useState(() => restoredSession?.title ?? "");
   const [company, setCompany] = useState(() => restoredSession?.company ?? "");
   const [description, setDescription] = useState(() => restoredSession?.description ?? "");
@@ -84,8 +104,12 @@ export function JobAnalysisPage({
   const [importedDraft, setImportedDraft] = useState<JobImportDraft | null>(
     () => restoredSession?.importedDraft ?? null,
   );
-
-  const [report, setReport] = useState<MatchReport | null>(() => restoredSession?.report ?? null);
+  const [importedReport, setImportedReport] = useState<MatchReport | null>(
+    () => restoredSession?.importedReport ?? null,
+  );
+  const [manualReport, setManualReport] = useState<MatchReport | null>(
+    () => restoredSession?.manualReport ?? null,
+  );
   const [activeAction, setActiveAction] = useState<
     "loading-report" | "import-url" | "import-screenshot" | "analyze" | "save" | null
   >(null);
@@ -94,9 +118,16 @@ export function JobAnalysisPage({
     () => restoredSession?.importNeedsManualDescription ?? false,
   );
   const [decisionDismissed, setDecisionDismissed] = useState(false);
+  const [analysisCollapsed, setAnalysisCollapsed] = useState(false);
   const [confirmedEligibility, setConfirmedEligibility] = useState<Set<string>>(new Set());
+  const report = inputMode === "import" ? importedReport : manualReport;
 
   const t = useT();
+  const selectInputMode = (nextMode: "import" | "manual") => {
+    setInputMode(nextMode);
+    setError("");
+    if (nextMode === "manual") setImportNeedsManualDescription(false);
+  };
 
   // Keep unsaved analysis work available while the student moves between
   // workspaces. sessionStorage is deliberately used instead of the database:
@@ -104,6 +135,7 @@ export function JobAnalysisPage({
   // to add it to the job workspace.
   useEffect(() => {
     const draft: JobAnalysisSession = {
+      inputMode,
       title,
       company,
       description,
@@ -112,7 +144,8 @@ export function JobAnalysisPage({
       requiredSkillsInput,
       responsibilitiesInput,
       importedDraft,
-      report,
+      importedReport,
+      manualReport,
       importNeedsManualDescription,
     };
     try {
@@ -122,6 +155,7 @@ export function JobAnalysisPage({
     }
   }, [
     title,
+    inputMode,
     company,
     description,
     jobCategory,
@@ -129,7 +163,8 @@ export function JobAnalysisPage({
     requiredSkillsInput,
     responsibilitiesInput,
     importedDraft,
-    report,
+    importedReport,
+    manualReport,
     importNeedsManualDescription,
   ]);
 
@@ -144,7 +179,21 @@ export function JobAnalysisPage({
     void getMatchReport(initialJob.id)
       .then((next) => {
         if (!active) return;
-        setReport(next);
+        setInputMode("import");
+        setImportedReport(next);
+        setAnalysisCollapsed(false);
+        // A role opened from the workspace is already a persisted import.
+        // Rebuild the folder entry from that role so a previous browser draft
+        // can never appear above a different role's analysis.
+        setImportedDraft({
+          title: next.job.title,
+          company: next.job.company,
+          description: next.job.description,
+          location: "",
+          deadline: "",
+          source_url: "",
+          needs_manual_description: false,
+        });
         setTitle(next.job.title);
         setCompany(next.job.company);
         setDescription(next.job.description);
@@ -169,9 +218,13 @@ export function JobAnalysisPage({
     setImportNeedsManualDescription(draft.needs_manual_description);
   };
 
-  const showPreview = async (payload: { title: string; company: string; description: string }) => {
+  const showPreview = async (
+    payload: { title: string; company: string; description: string },
+    source: "import" | "manual",
+  ) => {
     const preview = await previewJobAnalysis(payload);
-    setReport(preview);
+    if (source === "import") setImportedReport(preview);
+    else setManualReport(preview);
     setDecisionDismissed(false);
     setConfirmedEligibility(new Set());
   };
@@ -187,7 +240,7 @@ export function JobAnalysisPage({
         title: draft.title || "Untitled role",
         company: draft.company,
         description: draft.description,
-      });
+      }, "import");
     } finally {
       setActiveAction(null);
     }
@@ -195,9 +248,10 @@ export function JobAnalysisPage({
 
   const importUrl = async () => {
     setActiveAction("import-url");
+    setInputMode("import");
     setError("");
     setImportNeedsManualDescription(false);
-    setReport(null);
+    setImportedReport(null);
     setImportedDraft(null);
     try {
       const draft = await importJobUrl(url);
@@ -213,8 +267,9 @@ export function JobAnalysisPage({
   const importScreenshot = async () => {
     if (!file || !consent) return;
     setActiveAction("import-screenshot");
+    setInputMode("import");
     setError("");
-    setReport(null);
+    setImportedReport(null);
     setImportedDraft(null);
     try {
       const draft = await importJobScreenshot(file, consent);
@@ -252,7 +307,8 @@ export function JobAnalysisPage({
         responsibilities: splitManualItems(responsibilitiesInput),
         additional_details: description,
       });
-      setReport(preview);
+      setInputMode("manual");
+      setManualReport(preview);
       setDecisionDismissed(false);
       setConfirmedEligibility(new Set());
     } catch (e) {
@@ -276,8 +332,28 @@ export function JobAnalysisPage({
         responsibilities: report.job.responsibilities,
         qualifications: report.job.qualifications,
       });
-      setReport({ ...report, job });
+      const savedReport = { ...report, job };
+      if (inputMode === "import") setImportedReport(savedReport);
+      else setManualReport(savedReport);
       onJobAnalyzed?.({ id: job.id, title: job.title, company: job.company });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("job.workspaceSaveFailed"));
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
+  const promoteAndTrack = async () => {
+    if (!report?.job.id) return;
+    setActiveAction("save");
+    setError("");
+    try {
+      const job = await promoteJobToLibrary(report.job.id);
+      await createTracked({ company: job.company, role: job.title, job_id: job.id, status: "saved" });
+      const promotedReport = { ...report, job };
+      if (inputMode === "import") setImportedReport(promotedReport);
+      else setManualReport(promotedReport);
+      setAnalysisCollapsed(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("job.workspaceSaveFailed"));
     } finally {
@@ -303,109 +379,105 @@ export function JobAnalysisPage({
         </div>
       </header>}
       <section className="product-content job-workspace">
+        <section className={`job-input-mode-picker mode-${inputMode}`} aria-label={t("job.inputMethodLabel")}>
+          <button
+            type="button"
+            className={`job-input-mode-card import ${inputMode === "import" ? "active" : ""}`}
+            aria-pressed={inputMode === "import"}
+            onClick={() => selectInputMode("import")}
+          >
+            <span className="job-input-mode-number">A</span>
+            <span>
+              <strong>{t("job.inputMethod.importTitle")}</strong>
+              <small>{t("job.inputMethod.importSub")}</small>
+            </span>
+            <span className="job-input-mode-arrow" aria-hidden="true">→</span>
+          </button>
+          <button
+            type="button"
+            className={`job-input-mode-card manual ${inputMode === "manual" ? "active" : ""}`}
+            aria-pressed={inputMode === "manual"}
+            onClick={() => selectInputMode("manual")}
+          >
+            <span className="job-input-mode-number">B</span>
+            <span>
+              <strong>{t("job.inputMethod.manualTitle")}</strong>
+              <small>{t("job.inputMethod.manualSub")}</small>
+            </span>
+            <span className="job-input-mode-arrow" aria-hidden="true">→</span>
+          </button>
+        </section>
         <div className="job-input-stack">
-          <div className="card import-panel">
-            <p className="section-kicker">01 · IMPORT</p>
-            <h2>{t("job.importTitle")}</h2>
-            <p className="privacy-note">{t("job.importAutoAnalyse")}</p>
-            <label>
-              {t("job.publicUrl")}
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://jobs.lever.co/..."
-              />
-            </label>
-            <button
-              disabled={activeAction !== null || !url.trim()}
-              onClick={() => void importUrl()}
-            >
-              {activeAction === "import-url"
-                ? t("job.importing")
-                : t("job.importFromUrl")}
-            </button>
-            <label>
-              {t("job.screenshotLabel")}
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-              />
-            </label>
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-              />
-              {t("job.ocrConsent")}
-            </label>
-            <button
-              disabled={activeAction !== null || !file || !consent}
-              onClick={() => void importScreenshot()}
-            >
-              {activeAction === "import-screenshot"
-                ? t("job.recognizing")
-                : t("job.importFromScreenshot")}
-            </button>
-            {file && !consent && (
-              <p className="privacy-note" role="status">
-                {t("form.ocrConsentRequired")}
-              </p>
-            )}
-          </div>
-          {importedDraft ? (
-            <section className="card imported-analysis-card" aria-live="polite">
-              <p className="section-kicker">02 · IMPORTED ROLE ANALYSIS</p>
-              <div className="imported-analysis-heading">
-                <div>
-                  <h2>{importedDraft.title}</h2>
-                  {importedDraft.company && <p>{importedDraft.company}</p>}
-                </div>
-                <span className={activeAction === "analyze" ? "is-analyzing" : ""}>
-                  {activeAction === "analyze"
-                    ? t("job.analyzing")
-                    : report
-                      ? t("job.importedReady")
-                      : t("job.importedNeedsDetails")}
-                </span>
+          {inputMode === "import" ? (
+            <>
+              <div className="card import-panel">
+                <p className="section-kicker">IMPORT PATH</p>
+                <h2>{t("job.importTitle")}</h2>
+                <p className="privacy-note">{t("job.importAutoAnalyse")}</p>
+                <label>
+                  {t("job.publicUrl")}
+                  <input
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://jobs.lever.co/..."
+                  />
+                </label>
+                <button
+                  disabled={activeAction !== null || !url.trim()}
+                  onClick={() => void importUrl()}
+                >
+                  {activeAction === "import-url"
+                    ? t("job.importing")
+                    : t("job.importFromUrl")}
+                </button>
+                <label>
+                  {t("job.screenshotLabel")}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  />
+                </label>
+                <label className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                  />
+                  {t("job.ocrConsent")}
+                </label>
+                <button
+                  disabled={activeAction !== null || !file || !consent}
+                  onClick={() => void importScreenshot()}
+                >
+                  {activeAction === "import-screenshot"
+                    ? t("job.recognizing")
+                    : t("job.importFromScreenshot")}
+                </button>
+                {file && !consent && (
+                  <p className="privacy-note" role="status">
+                    {t("form.ocrConsentRequired")}
+                  </p>
+                )}
               </div>
-              {importedDraft.location && (
-                <p className="imported-analysis-meta">{t("job.location", { loc: importedDraft.location })}</p>
+              {importedDraft && (
+                <section className="card imported-analysis-folder" aria-live="polite" aria-label={t("job.importedFolderTitle")}>
+                  <div className="imported-analysis-heading">
+                    <div>
+                      <p className="section-kicker">{importedReport ? t("job.importedReady") : t("job.importedNeedsDetails")}</p>
+                      <h2>{importedDraft.title}</h2>
+                      {importedDraft.company && <p>{importedDraft.company}</p>}
+                      {importedDraft.location && <span className="sr-only">{t("job.location", { loc: importedDraft.location })}</span>}
+                    </div>
+                    {importedReport && <a className="imported-analysis-result-link" href="#job-analysis-result">{t("job.viewImportedAnalysis")}</a>}
+                  </div>
+                </section>
               )}
-              {importedDraft.source_url && (
-                <p className="imported-analysis-meta">{t("job.source", { url: importedDraft.source_url })}</p>
-              )}
-              <p className="privacy-note">
-                {activeAction === "analyze"
-                  ? t("job.importedAnalysing")
-                  : report
-                    ? t("job.importedAnalysisDone")
-                    : t("job.importNeedsManualDescription")}
-              </p>
-              {report && (
-                <a className="imported-analysis-result-link" href="#job-analysis-result">
-                  {t("job.viewImportedAnalysis")}
-                  <span aria-hidden="true">↓</span>
-                </a>
-              )}
-              <button
-                type="button"
-                className="secondary"
-                disabled={activeAction !== null}
-                onClick={() => {
-                  setImportedDraft(null);
-                  setReport(null);
-                  setImportNeedsManualDescription(false);
-                }}
-              >
-                {t("job.switchToManual")}
-              </button>
-            </section>
+            </>
           ) : (
           <form className="card analysis-form" onSubmit={submit}>
-            <p className="section-kicker">02 · MANUAL ROLE BRIEF</p>
+            <p className="section-kicker">MANUAL PATH</p>
             <h2>{t("job.manualTitle")}</h2>
             <p className="privacy-note">{t("job.manualSub")}</p>
             <label>
@@ -479,18 +551,16 @@ export function JobAnalysisPage({
         {importNeedsManualDescription && (
           <PageFeedback kind="info" message={t("job.importNeedsManualDescription")} />
         )}
-        {report && (
+        {report && !analysisCollapsed && (
           <>
-            <PageFeedback
-              kind={isSaved ? "success" : "info"}
-              message={t(isSaved ? "job.analyzedSaved" : "job.previewReady")}
-              {...(isSaved
-                ? {
-                    actionLabel: t("profile.backToDashboard"),
-                    onAction: onReturnToDashboard,
-                  }
-                : {})}
-            />
+            {isSaved && !report.job.library_saved && (
+              <div className="job-library-promotion">
+                <p>{t("job.promoteToLibraryHint")}</p>
+                <button type="button" onClick={() => void promoteAndTrack()} disabled={activeAction !== null}>
+                  {activeAction === "save" ? t("job.workspaceSaving") : t("job.promoteToLibrary")}
+                </button>
+              </div>
+            )}
             {!isSaved && !decisionDismissed && (
               <section className="card job-workspace-decision">
                 <div>
@@ -601,8 +671,32 @@ function MatchResult({
     qualification_coverage: t("job.qualifications"),
   };
 
+  const allSkills = [...report.job.required_skills, ...report.job.preferred_skills];
+  const coveredSkills = [...matchedRequired, ...matchedPreferred];
+
   return (
-    <div className="report" id="job-analysis-result" tabIndex={-1}>
+    <section className="report role-analysis-dashboard" id="job-analysis-result" tabIndex={-1}>
+      <header className="role-analysis-dashboard-header">
+        <div>
+          <p className="section-kicker">APPLYEASE · ROLE ANALYSIS</p>
+          <h2>{report.job.title}</h2>
+          <p>{report.job.company || "ApplyEase"}</p>
+        </div>
+        <div
+          className="role-analysis-score-ring"
+          style={{ "--score": `${report.overall_score * 3.6}deg` } as React.CSSProperties}
+          aria-label={`${t("job.matchScore")} ${t(`job.matchLevel.${matchLevelForScore(report.overall_score)}`)}`}
+        >
+          <strong>{t(`job.matchLevel.${matchLevelForScore(report.overall_score)}`)}</strong>
+          <span>{t("job.matchScore")}</span>
+        </div>
+      </header>
+      <div className="role-analysis-metrics" aria-label="Role analysis overview">
+        <div><small>{t("job.requiredSkills")}</small><strong>{report.job.required_skills.length}</strong></div>
+        <div><small>{t("job.evidence")}</small><strong>{report.evidence.length}</strong></div>
+        <div><small>{t("job.requiredGap")}</small><strong>{requiredMissing.length}</strong></div>
+        <div><small>{t("job.matchedRequired")}</small><strong>{coveredSkills.length} / {allSkills.length}</strong></div>
+      </div>
       {eligibilityChecks.length > 0 && (
         <section className={`card eligibility-gate eligibility-${eligibilityVerdict}`}>
           <p className="section-kicker">APPLYEASE · ELIGIBILITY CHECK</p>
@@ -638,21 +732,12 @@ function MatchResult({
           <small className="privacy-note">{t("job.eligibilitySafetyNote")}</small>
         </section>
       )}
-      <div className="score">
-        <span>{t("job.matchScore")}</span>
-        <strong>{report.overall_score}</strong>
-        <small>/ 100</small>
-      </div>
       {report.warnings?.map((warning) => (
         <p className="warning" key={warning}>
           {warning}
         </p>
       ))}
-      <div className="card">
-        <h2>
-          {report.job.title}
-          {report.job.company ? ` · ${report.job.company}` : ""}
-        </h2>
+      <div className="card role-analysis-skills">
         <h3>{t("job.requiredSkills")}</h3>
         <div className="tags">
           {report.job.required_skills.length ? (
@@ -742,18 +827,21 @@ function MatchResult({
 
       {report.score_breakdown &&
         Object.keys(report.score_breakdown).length > 0 && (
-          <div className="card">
+          <div className="card role-analysis-breakdown">
             <h2>{t("job.scoreBreakdown")}</h2>
             <ul>
               {Object.entries(report.score_breakdown).map(([key, value]) => (
-                <li key={key}>
+              <li
+                key={key}
+                style={{ "--score-value": value } as React.CSSProperties}
+              >
                   {t("job.scoreUnit", { label: labels[key] || key, value })}
                 </li>
               ))}
             </ul>
           </div>
         )}
-      <div className="card">
+      <div className="card role-analysis-evidence">
         <h2>{t("job.evidence")}</h2>
         {report.evidence.length ? (
           <ul>
@@ -769,7 +857,7 @@ function MatchResult({
           <p>{t("job.confirmFirst")}</p>
         )}
       </div>
-      <div className="card proof-map">
+      <div className="card proof-map role-analysis-proof-map">
         <p className="section-kicker">APPLYEASE · PROOF MAP</p>
         <h2>{t("proof.title")}</h2>
         <p className="privacy-note">{t("proof.sub")}</p>
@@ -814,6 +902,6 @@ function MatchResult({
           </button>
         )}
       </div>
-    </div>
+    </section>
   );
 }

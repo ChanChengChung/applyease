@@ -70,6 +70,8 @@ export function MaterialEditor({
       ? t("shared.generationMethod.ai")
       : material.generation_method === "user_edited"
         ? t("shared.generationMethod.user")
+        : material.generation_method === "demo_rules"
+          ? t("shared.generationMethod.demo")
         : t("shared.generationMethod.rule");
 
   const factLabel = material.fact_check_passed
@@ -135,7 +137,9 @@ export function MaterialEditor({
       {overLimit && <p className="error">{t("shared.overLimit")}</p>}
       {material.warnings.map((warning) => (
         <p className="error" key={warning}>
-          {warning}
+          {warning.includes("AI 生成未通过证据校验") || warning.includes("AI generation failed validation")
+            ? t("material.aiFallbackWarning")
+            : warning}
         </p>
       ))}
       {error && (

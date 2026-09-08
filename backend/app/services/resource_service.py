@@ -178,6 +178,23 @@ RESOURCE_CATALOG = [
         },
     },
     {
+        "title": "OCaml: Tour of OCaml",
+        "url": "https://ocaml.org/docs/tour-of-ocaml",
+        "provider": "OCaml.org",
+        "skills": ["OCaml", "Functional Programming", "Compilers"],
+        "difficulty": "beginner",
+        "duration_hours": 4,
+        "description": "Official introduction to OCaml syntax, types, pattern matching and functional programming.",
+        "project": {
+            "title": "Typed OCaml command-line tool",
+            "task": "Build a small typed command-line utility using algebraic data types, pattern matching and automated examples.",
+            "estimated_days": 5,
+            "deliverables": ["OCaml source", "Test cases", "README"],
+            "completion_criteria": ["Uses typed domain models", "Includes pattern matching", "Documents how to run examples"],
+            "cv_bullet_template": "Built a typed OCaml command-line tool using algebraic data types, pattern matching and documented test cases.",
+        },
+    },
+    {
         "title": "GitHub Skills",
         "url": "https://skills.github.com/",
         "provider": "GitHub",
@@ -200,11 +217,64 @@ DIFFICULTY_RANK = {"beginner": 0, "intermediate": 1, "advanced": 2}
 PLAN_GOALS = {"skills", "project", "interview"}
 
 
+def match_level_for_score(score: int) -> str:
+    """Convert the internal ranking score into a stable user-facing band."""
+    if score >= 85:
+        return "very_high"
+    if score >= 70:
+        return "high"
+    if score >= 45:
+        return "fair"
+    return "low"
+
+
+def baseline_resource_score(resource: LearningResource) -> int:
+    """Return a non-zero score when no job-specific recommendation exists.
+
+    Saved starter-plan resources are loaded without a ``ResourceRecommendation``
+    because they are no longer being ranked against a particular job.  Using
+    ``0`` in that case made the UI report a false failure.  This conservative,
+    deterministic score measures the resource's evidence quality instead:
+    provenance, metadata, and whether it has a verifiable project outcome.
+    It is deliberately independent of any user's job match and is only a
+    fallback for persisted resources.
+    """
+    score = 35
+    if resource.verified:
+        score += 15
+    if (resource.url or "").strip().lower().startswith("https://"):
+        score += 5
+    score += min(10, len(resource.skills or []) * 2)
+
+    project = resource.project or {}
+    if project.get("title") or project.get("task"):
+        score += 10
+    score += min(10, len(project.get("deliverables") or []) * 3)
+    score += min(6, len(project.get("completion_criteria") or []) * 2)
+
+    duration = resource.duration_hours or 0
+    if 1 <= duration <= 40:
+        score += 5
+    elif duration > 0:
+        score += 2
+    if resource.free:
+        score += 5
+
+    # Keep the fallback conservative: without a job there is no basis for a
+    # "very high" role match, but it should never be rendered as zero.
+    return max(35, min(75, score))
+
+
 @dataclass(frozen=True)
 class ResourceRecommendation:
     resource: LearningResource
 
     match_score: int
+
+    # The qualitative band is the user-facing match result.  Keep the numeric
+    # score only for deterministic ranking and backwards compatibility with
+    # older clients.
+    match_level: str
 
     matched_skills: list[str]
 
@@ -246,18 +316,23 @@ def recommend_resources(
                 "zh-TW": "面試專案故事重點",
             },
         }[selected_goal].get(language, "Skill-building focus")
+        matched_text = ", ".join(matched) or (
+            "與目前方向相關" if language == "zh-TW" else
+            "与你当前方向相关" if language == "zh-CN" else
+            "the current direction"
+        )
         if language == "zh-TW":
             return (
-                f"補強技能：{', '.join(matched)}；{resource.duration_hours} 小時，"
+                f"補強技能：{matched_text}；{resource.duration_hours} 小時，"
                 f"適合 {resource.difficulty} 程度。{focus}。"
             )
         if language == "zh-CN":
             return (
-                f"补强技能：{', '.join(matched)}；{resource.duration_hours} 小时，"
+                f"补强技能：{matched_text}；{resource.duration_hours} 小时，"
                 f"适合 {resource.difficulty} 水平。{focus}。"
             )
         return (
-            f"Addresses skill gaps: {', '.join(matched)}; {resource.duration_hours} hours; "
+            f"Addresses skill gaps: {matched_text}; {resource.duration_hours} hours; "
             f"suited to {resource.difficulty}. {focus}."
         )
 
@@ -311,7 +386,13 @@ def recommend_resources(
 
             score = max(1, min(100, round(skill_points + level_points + time_points + goal_points)))
             collected.append(
-                ResourceRecommendation(resource, score, matched, reason_for(matched, resource))
+                ResourceRecommendation(
+                    resource=resource,
+                    match_score=score,
+                    match_level=match_level_for_score(score),
+                    matched_skills=matched,
+                    recommendation_reason=reason_for(matched, resource),
+                )
             )
         return collected
 
@@ -329,7 +410,10 @@ def recommend_resources(
             respect_level=False,
             require_skill_match=True,
         )
-    if not recommendations:
+    # Never fill a role-specific plan with an unrelated catalogue item.  When
+    # a real gap (for example OCaml) has no local resource, the API can invoke
+    # public-web retrieval; it must not silently turn that gap into Docker.
+    if not recommendations and not missing:
         recommendations = collect(
             respect_budget=False,
             respect_level=False,

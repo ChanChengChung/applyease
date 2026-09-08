@@ -17,20 +17,20 @@ from app.services.resource_service import recommend_resources
 SCHEMA = {
     "type": "object",
     "properties": {
-        "profile_summary": {"type": "string"},
+        "plan_summary": {"type": "string"},
         "gaps": {"type": "array", "items": {"type": "string"}},
         "method": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["profile_summary", "gaps", "method"],
+    "required": ["plan_summary", "gaps", "method"],
 }
 
 _BOCHA_WEB_SEARCH_URL = "https://api.bochaai.com/v1/web-search"
 
 
-def _learning_source_domains(job: Job) -> list[str]:
+def _learning_source_domains(job: Job, target_skills: list[str] | None = None) -> list[str]:
     """Choose primary-source domains appropriate to the role's requirements."""
     text = " ".join(
-        [job.title, *[str(item) for item in (job.required_skills or [])]]
+        [job.title or "", job.description or "", *[str(item) for item in (job.required_skills or [])], *(target_skills or [])]
     ).casefold()
     domains: list[str] = []
     choices = (
@@ -40,6 +40,7 @@ def _learning_source_domains(job: Job) -> list[str]:
         (("data", "pandas", "analytics", "sql"), "pandas.pydata.org"),
         (("backend", "api", "fastapi", "web"), "fastapi.tiangolo.com"),
         (("frontend", "javascript", "typescript", "web"), "developer.mozilla.org"),
+        (("ocaml", "compiler", "functional programming"), "ocaml.org"),
         (("quant", "finance", "trading", "probability", "statistics"), "ocw.mit.edu"),
     )
     for keywords, domain in choices:
@@ -48,7 +49,7 @@ def _learning_source_domains(job: Job) -> list[str]:
     return (domains or ["ocw.mit.edu", "docs.python.org", "www.kaggle.com"])[: settings.bocha_search_max_requests]
 
 
-def _bocha_learning_sources(job: Job) -> list[dict[str, str]]:
+def _bocha_learning_sources(job: Job, target_skills: list[str] | None = None) -> list[dict[str, str]]:
     """Find current public learning sources without depending on Gemini Search.
 
     Bocha is used only to retrieve source metadata. The LLM receives those
@@ -58,7 +59,7 @@ def _bocha_learning_sources(job: Job) -> list[dict[str, str]]:
     token = settings.bocha_search_api_key.strip()
     if not token:
         raise ProviderError("Bocha Search API key is not configured")
-    skills = " ".join(str(skill) for skill in (job.required_skills or [])[:6])
+    skills = " ".join(str(skill) for skill in (target_skills or job.required_skills or [])[:6])
     query = " ".join(
         value
         for value in [job.title[:160], skills[:360], "official documentation learning resource"]
@@ -71,7 +72,7 @@ def _bocha_learning_sources(job: Job) -> list[dict[str, str]]:
         "User-Agent": "ApplyEaseLearningPlan/1.0",
     }
     try:
-        for domain in _learning_source_domains(job):
+        for domain in _learning_source_domains(job, target_skills):
             response = httpx.post(
                 _BOCHA_WEB_SEARCH_URL,
                 json={"query": query, "count": 6, "summary": False, "include": domain},
@@ -185,7 +186,17 @@ def _profile_summary(value: Any) -> str:
     # A research brief is context, not an essay. Preserve at most two sentence
     # boundaries when the model is unusually verbose.
     pieces = re.split(r"(?<=[.!?。！？])\s+", text)
-    return " ".join(pieces[:2]).strip()[:520]
+    # Keep the visible summary to one sentence.  The detailed execution path
+    # belongs in ``method`` below, while this field is the one-line takeaway.
+    summary = (pieces[0] if pieces else text).strip()
+    # A model occasionally follows the old field name and dumps a CV-like
+    # profile. Keep the persisted brief useful as a plan overview, not a
+    # second resume: prefer the first clause and enforce a display-safe bound.
+    if len(summary) > 260:
+        clauses = re.split(r"[；;，,]", summary)
+        if clauses and len(clauses[0].strip()) >= 20:
+            summary = clauses[0].strip()
+    return summary[:260]
 
 
 def build_research_plan(
@@ -199,6 +210,7 @@ def build_research_plan(
     language: str,
     learning_style: str = "hands_on",
     missing_skills: list[str] | None = None,
+    focuses: list[str] | None = None,
 ) -> dict:
     facts = [
         {"title": item.title, "description": item.description[:600], "skills": item.skills[:20]}
@@ -207,7 +219,8 @@ def build_research_plan(
     ][:10]
     budget = weekly_hours * weeks
     report_gaps = [str(skill).strip() for skill in (missing_skills or []) if str(skill).strip()]
-    prompt = f"""You are an evidence-first career learning mentor. Reply in {language}. Use the supplied live search results only. Prefer primary sources: official competition organisers, official software/documentation, public-data publishers, university/research institutions, or the organisation that runs the programme. Exclude blogs, Medium, Substack, Scribd, SEO pages, trading-course sellers and unverified aggregators. Do not claim the student completed anything. Do not recommend beginner material for skills clearly evidenced unless you explain missing depth. Return ONLY a valid JSON object, without markdown, with exactly: profile_summary (string), gaps (2-5 capability gaps), method (3-5 ordered, concrete actions).\nTARGET JOB: {job.company} · {job.title}\nREQUIREMENTS: {job.required_skills}; preferred={job.preferred_skills}\nMATCH REPORT MISSING SKILLS (prioritise these): {report_gaps}\nCONFIRMED EVIDENCE: {facts}\nCONSTRAINTS: {weekly_hours} hours/week for {weeks} weeks ({budget} hours); goal={goal}."""
+    requested_focuses = [str(value).strip() for value in (focuses or []) if str(value).strip()]
+    prompt = f"""You are an evidence-first career learning mentor. Reply in {language}. Use the supplied live search results only. Prefer primary sources: official competition organisers, official software/documentation, public-data publishers, university/research institutions, or the organisation that runs the programme. Exclude blogs, Medium, Substack, Scribd, SEO pages, trading-course sellers and unverified aggregators. Do not claim the student completed anything. Do not recommend beginner material for skills clearly evidenced unless you explain missing depth. Return ONLY a valid JSON object, without markdown, with exactly: plan_summary (one sentence, at most 160 characters, stating what the student should do first, how they will practise, and what verifiable output they should produce; never repeat the CV, name, email, or a long list of experiences), gaps (2-5 capability gaps), method (3-5 ordered, concrete actions).\nTARGET JOB: {job.company} · {job.title}\nREQUIREMENTS: {job.required_skills}; preferred={job.preferred_skills}\nMATCH REPORT MISSING SKILLS (prioritise these): {report_gaps}\nCONFIRMED EVIDENCE (use only to identify gaps; do not restate it in plan_summary): {facts}\nCONSTRAINTS: {weekly_hours} hours/week for {weeks} weeks ({budget} hours); goal={goal}.\nUSER-SELECTED REINFORCEMENT DIRECTIONS: {requested_focuses or ['evidence', 'skills', 'materials']}\nOnly generate actions that serve the selected directions. evidence=review proof gaps; skills=practice missing skills; materials=improve application materials. Do not invent unselected directions."""
     prompt += (
         "\\nLEARNING STYLE: "
         f"{learning_style}. Respect it in the ordered actions: hands_on means "
@@ -221,7 +234,7 @@ def build_research_plan(
         # Gemini remains a secondary path for existing deployments that have
         # no Bocha key but do have Google Search access.
         if settings.bocha_search_api_key.strip():
-            researched_sources = _bocha_learning_sources(job)
+            researched_sources = _bocha_learning_sources(job, report_gaps)
             data = _dashscope_grounded_plan(prompt, researched_sources)
             sources = [
                 {"title": row["title"], "url": row["url"]} for row in researched_sources
@@ -236,7 +249,7 @@ def build_research_plan(
         if report_gaps:
             gaps = _clean_items([*report_gaps, *gaps], purpose="gap", limit=300, max_items=5)
         method = _clean_items(data.get("method"), purpose="method", limit=500, max_items=5)
-        summary = _profile_summary(data.get("profile_summary"))
+        summary = _profile_summary(data.get("plan_summary") or data.get("profile_summary"))
         # An incomplete response is less useful than the reviewed fallback and
         # must never leave the UI with raw JSON or empty learning actions.
         if not summary or not gaps or not method:
@@ -246,23 +259,53 @@ def build_research_plan(
             "gaps": gaps,
             "method": method,
             "sources": sources,
+            "focuses": requested_focuses or ["evidence", "skills", "materials"],
             "searched_at": datetime.now(timezone.utc),
             "used_fallback": False,
         }
     except ProviderError:
         fallback = recommend_resources(
-            list(job.required_skills or [])[:5],
+            report_gaps,
             resources,
             max_total_hours=budget,
             limit=4,
             goal=goal,
             language=language,
         )
+        gap_text = ", ".join(report_gaps[:3]) or "关键能力缺口"
+        fallback_summary = (
+            f"先用官方资料补齐 {gap_text}，再完成一个可验证的小练习并记录结果。"
+            if language.startswith("zh")
+            else f"Start with official sources for {gap_text}, then complete and document one verifiable practice task."
+        )
+        focus_set = set(requested_focuses or ["evidence", "skills", "materials"])
+        fallback_method: list[str] = []
+        if "evidence" in focus_set:
+            fallback_method.append(
+                "逐项复核职位要求与已有经历，补充可公开验证的证据。"
+                if language.startswith("zh")
+                else "Review each requirement against existing experience and add verifiable evidence."
+            )
+        if "skills" in focus_set:
+            fallback_method.extend(x.recommendation_reason for x in fallback[:3])
+        if "materials" in focus_set:
+            fallback_method.append(
+                "把新增证据同步到简历、求职信和申请题草稿，并逐项校验。"
+                if language.startswith("zh")
+                else "Update the resume, cover letter, and application answers with the new evidence, then verify each claim."
+            )
+        if not fallback_method:
+            fallback_method.append(
+                "先确认一个最重要的能力缺口，再用官方资料完成可验证练习。"
+                if language.startswith("zh")
+                else "Confirm the highest-impact gap, then complete one verifiable exercise using an official source."
+            )
         return {
-            "profile_summary": "Live web research is unavailable; showing reviewed fallback resources for the selected role.",
-            "gaps": list(job.required_skills or [])[:5],
-            "method": [x.recommendation_reason for x in fallback],
+            "profile_summary": fallback_summary,
+            "gaps": report_gaps[:5],
+            "method": fallback_method[:5],
             "sources": [{"title": x.resource.title, "url": x.resource.url} for x in fallback],
+            "focuses": requested_focuses or ["evidence", "skills", "materials"],
             "searched_at": datetime.now(timezone.utc),
             "used_fallback": True,
         }

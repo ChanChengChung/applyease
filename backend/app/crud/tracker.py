@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.orm import Session
 
 from app.models.tracker import TrackedApplication
@@ -52,6 +52,16 @@ def get(db: Session, item_id: int):
     return db.get(TrackedApplication, item_id)
 
 
+def get_for_user(db: Session, item_id: int, user_id: int | None):
+    """Fetch a tracker record while preserving tenant isolation."""
+    return db.scalar(
+        select(TrackedApplication).where(
+            TrackedApplication.id == item_id,
+            TrackedApplication.user_id == user_id,
+        )
+    )
+
+
 def get_by_job(db: Session, user_id: int | None, job_id: int) -> TrackedApplication | None:
     """Return the one tracker record permitted for a role in a user's workspace."""
     return db.scalar(
@@ -89,3 +99,19 @@ def delete(db: Session, item: TrackedApplication):
     db.delete(item)
 
     db.commit()
+
+
+def delete_for_user(db: Session, item_id: int, user_id: int | None) -> bool:
+    """Delete one unlinked application by its immutable record id.
+
+    Company names are deliberately not part of this predicate: the same
+    employer can have several distinct roles and each must remain independent.
+    """
+    result = db.execute(
+        sa_delete(TrackedApplication).where(
+            TrackedApplication.id == item_id,
+            TrackedApplication.user_id == user_id,
+        )
+    )
+    db.commit()
+    return bool(result.rowcount)

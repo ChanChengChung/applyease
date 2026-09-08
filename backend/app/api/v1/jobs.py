@@ -191,6 +191,22 @@ def save_analyzed_job(payload: JobSaveAnalyzedRequest, db: Session = Depends(get
     return job_crud.create(db, **payload.model_dump())
 
 
+@router.post("/{job_id}/promote-to-library", response_model=JobRead)
+def promote_job_to_library(job_id: int, db: Session = Depends(get_db)):
+    """Promote an explicitly reviewed analysis into the role-library.
+
+    Preview and ordinary workspace saves remain invisible to category folders
+    until the user makes this deliberate decision.
+    """
+    job = job_crud.get_for_user(db, job_id, db.info.get("current_user_id"))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.library_saved = True
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 @router.get("/{job_id}", response_model=JobRead)
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = job_crud.get_for_user(db, job_id, db.info.get("current_user_id"))

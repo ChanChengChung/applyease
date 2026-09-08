@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.ai_quota import reserve_ai_generation, reserve_job_import
@@ -62,7 +62,15 @@ def _import_reviewed_opportunity(search_id: int, opportunity_index: int, db: Ses
             description, ai_enabled=settings.ai_job_analysis_enabled
         )
     return job_crud.create(
-        db, title=title, company=company, description=description, **requirements
+        db,
+        title=title,
+        company=company,
+        description=description,
+            source_url=str(
+                (draft.get("source_url") if isinstance(draft, dict) else getattr(draft, "source_url", ""))
+                or source_url
+            ),
+        **requirements,
     )
 
 
@@ -114,8 +122,18 @@ def search_opportunities(payload: OpportunitySearchRequest, db: Session = Depend
 
 
 @router.get("/searches", response_model=list[OpportunitySearchRead])
-def list_searches(db: Session = Depends(get_db)):
-    return opportunity_crud.list_recent(db)
+def list_searches(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Return enough history for the role-library folders without mutating it.
+
+    The previous default of ten searches could hide older generated roles from
+    the client-side category folders.  This remains bounded to protect the
+    response size while covering normal usage; callers may request a smaller
+    page when needed.
+    """
+    return opportunity_crud.list_recent(db, limit=limit)
 
 
 @router.delete("/searches/{search_id}", status_code=204)
@@ -144,6 +162,12 @@ def import_and_track_opportunity(
     never a claim that an application was submitted.
     """
     job = _import_reviewed_opportunity(search_id, opportunity_index, db)
+    # Promotion into the role-library is deliberately tied to this explicit
+    # review-and-track action; search results and ordinary analysis saves do
+    # not appear in folders prematurely.
+    job.library_saved = True
+    db.commit()
+    db.refresh(job)
     user_id = db.info.get("current_user_id")
     tracker = tracker_crud.get_by_job(db, user_id, job.id)
     if tracker is None:

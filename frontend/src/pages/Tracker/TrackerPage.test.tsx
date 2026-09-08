@@ -134,6 +134,9 @@ describe("TrackerPage", () => {
         }),
       ),
     );
+    expect(
+      await screen.findByText(/已将 Polymer · Quant Intern 加入申请追踪/),
+    ).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("筛选状态"), "interview");
 
@@ -187,6 +190,11 @@ describe("TrackerPage", () => {
 
   it("edits and confirms deletion", async () => {
     const user = userEvent.setup();
+    let listCalls = 0;
+    api.listTracked.mockImplementation(() => {
+      listCalls += 1;
+      return Promise.resolve(listCalls >= 3 ? [] : [record]);
+    });
     renderWithProviders(<TrackerPage />);
     await screen.findByText("Polymer");
 
@@ -208,6 +216,9 @@ describe("TrackerPage", () => {
     vi.mocked(window.confirm).mockReturnValue(true);
     await user.click(screen.getByRole("button", { name: "删除" }));
     await waitFor(() => expect(api.deleteTracked).toHaveBeenCalledWith(1));
+    await waitFor(() =>
+      expect(screen.queryByText("Polymer")).not.toBeInTheDocument(),
+    );
   });
 
   it("files a saved role in the applied-jobs folder using persisted status", async () => {
@@ -225,14 +236,19 @@ describe("TrackerPage", () => {
     );
   });
 
-  it("shows reminders, changes their horizon, and exports a selected calendar", async () => {
+  it("shows reminders, filters by calendar dates, and exports a selected calendar", async () => {
     const user = userEvent.setup();
     renderWithProviders(<TrackerPage />);
     await screen.findByText("Polymer");
     expect(screen.getByText(/跟进申请：Polymer/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("未来范围"), "30");
+    expect(screen.getByText("2026-08-22")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("开始日期"), "2026-08-01");
+    await user.type(screen.getByLabelText("结束日期"), "2026-09-30");
     await waitFor(() =>
-      expect(api.getTrackerReminders).toHaveBeenLastCalledWith(30),
+      expect(api.getTrackerReminders).toHaveBeenLastCalledWith({
+        from_date: "2026-08-01",
+        to_date: "2026-09-30",
+      }),
     );
     await user.click(screen.getByRole("button", { name: "导出日历 (.ics)" }));
     await waitFor(() =>
@@ -262,6 +278,23 @@ describe("TrackerPage", () => {
     );
     expect(screen.getByText("这份职位已准备的材料")).toBeInTheDocument();
     expect(screen.getByText("申请题回答：已完成 1/2")).toBeInTheDocument();
-    expect(screen.getByText("补强计划：已保存 3 步")).toBeInTheDocument();
+    expect(screen.getByText("学习·补强计划：已保存 3 步")).toBeInTheDocument();
+  });
+
+  it("updates the current target when another analyzed role is selected", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TrackerPage
+        initialJob={{ id: 3, company: "Polymer", title: "Quant Intern" }}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Polymer · Quant Intern" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "从个人工作台导入" }));
+    await user.selectOptions(screen.getByLabelText("已分析职位"), "8");
+
+    expect(
+      screen.getByRole("heading", { name: "Jane Street · Software Engineer Internship" }),
+    ).toBeInTheDocument();
   });
 });

@@ -174,4 +174,38 @@ describe("ExperienceCard", () => {
     expect(screen.getByText("chen@example.com")).toBeInTheDocument();
     expect(screen.getByText("+852 1234 5678")).toBeInTheDocument();
   });
+
+  it("edits personal details in separate fields without an achievements editor", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const personal: Experience = {
+      ...item,
+      title: "Chen Zhengzhong",
+      organization: "Personal profile",
+      category: "personal",
+      description:
+        "Name: Chen Zhengzhong\nEmail: chen@example.com\nLinkedIn: https://linkedin.com/in/chen",
+    };
+
+    renderWithProviders(
+      <ExperienceCard item={personal} onSave={onSave} onDelete={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+
+    expect(screen.getByDisplayValue("chen@example.com")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://linkedin.com/in/chen")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/成果 1|Achievement 1/)).not.toBeInTheDocument();
+
+    await user.clear(screen.getByDisplayValue("chen@example.com"));
+    await user.type(screen.getByLabelText(/电子邮件|Email/), "updated@example.com");
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Chen Zhengzhong",
+        description: expect.stringContaining("Email: updated@example.com"),
+      }),
+    );
+  });
 });

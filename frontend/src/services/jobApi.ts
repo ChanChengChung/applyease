@@ -75,6 +75,11 @@ export async function deleteJob(jobId: number): Promise<void> {
     { parseJson: false },
   );
 }
+export async function promoteJobToLibrary(jobId: number): Promise<Job> {
+  return request<Job>(`/jobs/${jobId}/promote-to-library`, {
+    method: "POST",
+  });
+}
 export async function getApplicationReadiness(
   jobId: number,
 ): Promise<ApplicationReadiness> {

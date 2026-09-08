@@ -3,8 +3,10 @@ from uuid import uuid4
 
 from docx import Document
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from app.main import app
+from app.services.resume_export_service import resume_lines_for_export
 
 
 def _token(client: TestClient, label: str) -> str:
@@ -132,3 +134,36 @@ def test_export_applies_section_order_and_never_exports_no_sections():
         ).status_code
         == 422
     )
+
+
+def test_resume_export_normalizes_legacy_localized_labels():
+    record = SimpleNamespace(
+        content={
+            "text": "目标职位: Software Engineer\n公司: Jane Street\n相关经历\n技能: MATLAB"
+        }
+    )
+
+    lines = resume_lines_for_export(record)
+
+    assert lines == [
+        "Target Role: Software Engineer",
+        "Company: Jane Street",
+        "SELECTED EXPERIENCE",
+        "Skills: MATLAB",
+    ]
+
+
+def test_resume_export_preserves_selected_non_english_labels():
+    record = SimpleNamespace(
+        content={
+            "output_language": "zh-CN",
+            "text": "目标职位: Software Engineer\n公司: Jane Street\n相关经历\n技能: MATLAB",
+        }
+    )
+
+    assert resume_lines_for_export(record) == [
+        "目标职位: Software Engineer",
+        "公司: Jane Street",
+        "相关经历",
+        "技能: MATLAB",
+    ]

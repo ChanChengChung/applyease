@@ -126,6 +126,7 @@ export function App() {
   }, [authRequired]);
 
   const [page, setPage] = useState<PageId>("welcome");
+  const [welcomePath, setWelcomePath] = useState<"new" | null>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -134,9 +135,26 @@ export function App() {
   const [selectedTrackerId, setSelectedTrackerId] = useState<number | undefined>();
 
   const navigate = (target: PageId, job?: NavigationJob) => {
+    setWelcomePath(null);
     if (job) setSelectedJob(job);
     setPage(target);
     window.scrollTo?.({ top: 0, behavior: "smooth" });
+  };
+
+  const navigateFromAdvisor = (
+    target: string,
+    targetId?: number | null,
+  ) => {
+    const pageTarget = target as PageId;
+    if (target === "tracker" && targetId) setSelectedTrackerId(targetId);
+    // Aira may point to the role currently loaded in the shell. Preserve its
+    // richer navigation object when possible; otherwise the destination page
+    // will fetch its own list and remain user-scoped.
+    if (target === "jobs" && targetId && selectedJob?.id === targetId) {
+      navigate(pageTarget, selectedJob);
+      return;
+    }
+    navigate(pageTarget);
   };
 
   // Page registry: maps each PageId to its render function. This replaces the
@@ -147,6 +165,8 @@ export function App() {
       <WelcomePage
         onOpenExperienceBank={() => navigate("profile")}
         onOpenLearningPlan={() => navigate("resources")}
+        onPathChange={setWelcomePath}
+        initialPath={welcomePath}
       />
     ),
     dashboard: () => (
@@ -158,7 +178,6 @@ export function App() {
     ),
     profile: () => (
       <ProfilePage
-        onExploreOpportunities={() => navigate("opportunities")}
         onReturnWelcome={() => navigate("welcome")}
       />
     ),
@@ -198,7 +217,19 @@ export function App() {
         onReturnToDashboard={() => navigate("dashboard")}
       />
     ),
-    resources: () => <ResourcePlanPage initialJobId={selectedJob?.id} />,
+    resources: () => (
+      <ResourcePlanPage
+        initialJobId={selectedJob?.id}
+        onCreateStarterPlan={() => {
+          // Open the planner directly; the welcome choice screen is only for
+          // first-time onboarding and should not interrupt an explicit request
+          // to create another saved plan.
+          setWelcomePath("new");
+          setPage("welcome");
+          window.scrollTo?.({ top: 0, behavior: "smooth" });
+        }}
+      />
+    ),
     tracker: () => (
       <TrackerPage
         initialJob={selectedJob}
@@ -242,7 +273,7 @@ export function App() {
     <AppErrorBoundary {...errorBoundaryProps}>
       <div className="app-layout">
         <Sidebar
-          activePage={page}
+          activePage={page === "welcome" && welcomePath === "new" ? "resources" : page}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           onNavigate={(id) => navigate(id)}
@@ -268,7 +299,11 @@ export function App() {
                 {PAGE_REGISTRY[page]()}
               </Suspense>
             </div>
-            <AdvisorAssistant activePage={page} activeJob={selectedJob} />
+            <AdvisorAssistant
+              activePage={page}
+              activeJob={selectedJob}
+              onNavigate={navigateFromAdvisor}
+            />
           </main>
         </div>
       </div>

@@ -11,7 +11,12 @@ from app.ai.prompt_versions import JOB_MATCH, JOB_REQUIREMENTS
 from app.models.experience import Experience
 from app.models.job import Job
 from app.schemas.job import Evidence, MatchReport
-from app.services.job_analysis_service import build_match_report, extract_job_requirements
+from app.services.job_analysis_service import (
+    _job_read_with_resolved_skills,
+    _resolved_job_skills,
+    build_match_report,
+    extract_job_requirements,
+)
 from app.services.rag_service import format_context, retrieve_context
 
 JOB_SCHEMA: dict[str, Any] = {
@@ -140,9 +145,8 @@ def build_match_report_ai(
     if not confirmed:
 
         return build_match_report(job, [])
-    requirements = list(
-        dict.fromkeys([*(job.required_skills or []), *(job.preferred_skills or [])])
-    )
+    required, preferred = _resolved_job_skills(job)
+    requirements = list(dict.fromkeys([*required, *preferred]))
 
     experience_payload = [
         {
@@ -224,10 +228,6 @@ def build_match_report_ai(
     if claimed_matches and not matched:
 
         raise ProviderError("AI match claims were not supported by exact evidence")
-    required = job.required_skills or []
-
-    preferred = job.preferred_skills or []
-
     required_keys = {skill.casefold() for skill in required}
 
     matched_required = [skill for skill in matched if skill.casefold() in required_keys]
@@ -256,7 +256,7 @@ def build_match_report_ai(
     )
 
     return MatchReport(
-        job=job,
+        job=_job_read_with_resolved_skills(job, required, preferred),
         overall_score=min(score, 100),
         matched_skills=matched,
         missing_skills=missing,

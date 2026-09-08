@@ -362,6 +362,34 @@ def test_discovery_uses_official_ats_when_bocha_has_no_fresh_verified_result(mon
     assert result["strategy_outcomes"] == [{"mode": "ai", "status": "success", "count": 1}]
 
 
+def test_discovery_forwards_location_preferences_and_timing_to_search_provider(monkeypatch):
+    captured = {}
+
+    def fake_ats(_evidence, **kwargs):
+        captured.update(kwargs)
+        return {
+            "opportunities": [],
+            "sources": [],
+            "used_fallback": True,
+            "unavailable_reason": "provider_unavailable",
+        }
+
+    monkeypatch.setattr(opportunity_service, "_direct_ats_search", fake_ats)
+    result = opportunity_service.discover_opportunities(
+        [],
+        career_goal="software internship",
+        location="London",
+        work_preference="hybrid",
+        timing="Summer 2027",
+        language="en",
+        limit=5,
+        search_modes=["official_ats"],
+    )
+    assert result["opportunities"] == []
+    assert captured["work_preference"] == "hybrid"
+    assert captured["timing"] == "Summer 2027"
+
+
 def test_direct_ats_search_parses_duckduckgo_redirects_without_an_ai_provider(monkeypatch):
     class Response:
         text = """
@@ -492,7 +520,7 @@ def test_greenhouse_official_boards_add_a_broad_current_student_role_pool(monkey
     assert result["opportunities"][0]["gaps_to_address"]
 
 
-def test_official_feed_ranks_requested_city_above_other_cities_and_excludes_expired_internships(monkeypatch):
+def test_official_feed_keeps_requested_city_only_and_excludes_expired_internships(monkeypatch):
     monkeypatch.setattr(opportunity_service, "_LEVER_PUBLIC_FEEDS", {"ekimetrics": "Ekimetrics"})
     class Response:
         def raise_for_status(self):
@@ -530,7 +558,6 @@ def test_official_feed_ranks_requested_city_above_other_cities_and_excludes_expi
     )
     assert [item["title"] for item in result["opportunities"]] == [
         "Data Science Internship - Hong Kong",
-        "Strategy & Data Science Internship - Shanghai",
     ]
     row = result["opportunities"][0]
     assert "Shanghai" not in row["location"]
@@ -539,7 +566,7 @@ def test_official_feed_ranks_requested_city_above_other_cities_and_excludes_expi
     assert row["gaps_to_address"]
 
 
-def test_location_ranking_prefers_requested_office_without_hiding_verified_alternatives():
+def test_location_ranking_uses_verified_alternatives_only_when_requested_city_has_none():
     rows = [
         {"company": "Example", "title": "Quant Research Internship - Shanghai", "location": "Shanghai"},
         {"company": "Example", "title": "Quant Trading Internship - Hong Kong", "location": "Hong Kong"},
@@ -547,7 +574,7 @@ def test_location_ranking_prefers_requested_office_without_hiding_verified_alter
     result = opportunity_service._dedupe_and_rank(
         rows, career_goal="quant internship", location="Hong Kong", limit=5
     )
-    assert len(result) == 2
+    assert len(result) == 1
     assert result[0]["location"] == "Hong Kong"
 
     new_york_result = opportunity_service._dedupe_and_rank(
@@ -557,6 +584,36 @@ def test_location_ranking_prefers_requested_office_without_hiding_verified_alter
         limit=5,
     )
     assert len(new_york_result) == 2
+
+
+def test_ranking_diversifies_employers_and_matches_terms_at_word_boundaries():
+    rows = [
+        {"company": "Alpha", "title": "Data Engineering Intern", "location": "London"},
+        {"company": "Alpha", "title": "Data Science Intern", "location": "London"},
+        {"company": "Beta", "title": "Software Engineering Intern", "location": "London"},
+        {"company": "Gamma", "title": "Candidate Operations Intern", "location": "London"},
+    ]
+    result = opportunity_service._dedupe_and_rank(
+        rows, career_goal="software engineering internship", location="London", limit=3
+    )
+    assert [item["company"] for item in result] == ["Beta", "Alpha", "Gamma"]
+    # ``data`` must not be treated as a substring of ``candidate``.
+    assert opportunity_service._term_in_text("candidate operations intern", "data") is False
+
+
+def test_ranking_respects_explicit_work_preference_when_metadata_is_available():
+    rows = [
+        {"company": "Remote Co", "title": "Software Intern", "location": "London", "employment_type": "Remote internship"},
+        {"company": "Office Co", "title": "Software Intern", "location": "London", "employment_type": "On-site internship"},
+    ]
+    result = opportunity_service._dedupe_and_rank(
+        rows,
+        career_goal="software internship",
+        location="London",
+        work_preference="remote",
+        limit=5,
+    )
+    assert [item["company"] for item in result] == ["Remote Co"]
 
 
 def test_role_copy_and_honest_gaps_follow_selected_language():

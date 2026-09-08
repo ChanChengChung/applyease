@@ -97,8 +97,10 @@ const NAV_ITEMS: NavItem[] = [
 const NAV_GROUPS: NavGroup[] = [
   { labelKey: "nav.foundation", items: [NAV_ITEMS[0]] },
   { labelKey: "nav.discovery", items: NAV_ITEMS.slice(2, 3) },
-  { labelKey: "nav.prepare", items: NAV_ITEMS.slice(3, 5) },
-  { labelKey: "nav.manage", items: NAV_ITEMS.slice(5) },
+  // Keep the application builder first, then surface tracking before the
+  // learning/reinforcement plan in the ongoing preparation workflow.
+  { labelKey: "nav.prepare", items: [NAV_ITEMS[3]] },
+  { labelKey: "nav.manage", items: [NAV_ITEMS[5], NAV_ITEMS[4]] },
 ];
 
 interface SidebarProps {

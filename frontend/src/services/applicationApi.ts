@@ -1,6 +1,7 @@
 import type {
   AnswerTemplate,
   Application,
+  ApplicationQuestion,
   BatchGenerationTask,
   GeneratedAnswer,
 } from "../types/application";
@@ -18,6 +19,51 @@ export async function detectQuestions(
 }
 export function getLatestApplication(jobId: number): Promise<Application> {
   return request<Application>(`/applications/latest?job_id=${jobId}`);
+}
+export async function createManualQuestion(
+  jobId: number,
+  question = "",
+  options: {
+    maxCharacters?: number;
+    answerTone?: "professional" | "concise" | "enthusiastic" | "technical" | "reflective";
+    desiredContent?: string;
+  } = {},
+): Promise<Application> {
+  return request<Application>(`/applications/questions/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      job_id: jobId,
+      question,
+      max_characters: options.maxCharacters,
+      answer_tone: options.answerTone,
+      desired_content: options.desiredContent,
+    }),
+  });
+}
+export async function updateManualQuestion(
+  applicationId: number,
+  questionId: number,
+  payload: {
+    question: string;
+    maxCharacters?: number;
+    answerTone?: "professional" | "concise" | "enthusiastic" | "technical" | "reflective";
+    desiredContent?: string;
+  },
+): Promise<ApplicationQuestion> {
+  return request<ApplicationQuestion>(
+    `/applications/${applicationId}/questions/${questionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: payload.question,
+        max_characters: payload.maxCharacters,
+        answer_tone: payload.answerTone,
+        desired_content: payload.desiredContent,
+      }),
+    },
+  );
 }
 export function getSavedAnswers(
   applicationId: number,

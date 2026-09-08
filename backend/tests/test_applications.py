@@ -5,6 +5,43 @@ from app.ai.providers import llm
 client = TestClient(app)
 
 
+def test_manual_application_questions_are_persisted_and_editable():
+    job = client.post(
+        "/api/v1/jobs/analyze",
+        json={"title": "Intern", "description": "A role requiring research."},
+    ).json()
+
+    created = client.post(
+        "/api/v1/applications/questions/manual",
+        json={"job_id": job["id"], "question": "Why this role?"},
+    )
+    assert created.status_code == 201
+    application = created.json()
+    assert len(application["questions"]) == 1
+    question_id = application["questions"][0]["id"]
+
+    added = client.post(
+        "/api/v1/applications/questions/manual",
+        json={"job_id": job["id"], "question": "Describe a project."},
+    )
+    assert added.status_code == 201
+    assert len(added.json()["questions"]) == 2
+
+    updated = client.patch(
+        f"/api/v1/applications/{application['id']}/questions/{question_id}",
+        json={"question": "Why are you interested in this role?"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["question"] == "Why are you interested in this role?"
+
+    restored = client.get(f"/api/v1/applications/latest?job_id={job['id']}")
+    assert restored.status_code == 200
+    assert [item["question"] for item in restored.json()["questions"]] == [
+        "Why are you interested in this role?",
+        "Describe a project.",
+    ]
+
+
 def test_detect_questions_classifies_and_reads_limit():
     job = client.post(
         "/api/v1/jobs/analyze",

@@ -1,8 +1,14 @@
-import { useState } from "react";
-import { useI18n, useT } from "../i18n/LanguageProvider";
-import { getStarterPlan } from "../services/resourceApi";
+import { useEffect, useState } from "react";
+import { useT } from "../i18n/LanguageProvider";
+import {
+  deleteStarterPlan,
+  getSavedStarterPlan,
+  getStarterPlan,
+  listStarterPlans,
+} from "../services/resourceApi";
 import type { StarterPlan } from "../types/resource";
 import { downloadStarterPlan } from "../utils/starterPlanExport";
+import { detectContentLanguage } from "../utils/contentLanguage";
 
 type Props = {
   mode: "new" | "experienced";
@@ -23,9 +29,10 @@ export function StarterPlanner({
   onOpenLearningPlan,
 }: Props) {
   const t = useT();
-  const { language } = useI18n();
   const [interest, setInterest] = useState("");
   const [plan, setPlan] = useState<StarterPlan | null>(null);
+  const [savedPlans, setSavedPlans] = useState<StarterPlan[]>([]);
+  const [savedPlansLoading, setSavedPlansLoading] = useState(true);
   const [level, setLevel] = useState<"none" | "basic" | "some">("none");
   const [goal, setGoal] = useState<"explore" | "portfolio" | "competition">(
     "explore",
@@ -43,6 +50,32 @@ export function StarterPlanner({
   const interestTooShort =
     interest.trim().length > 0 && interest.trim().length < 8;
 
+  useEffect(() => {
+    let active = true;
+    setSavedPlansLoading(true);
+    void listStarterPlans()
+      .catch(() => getSavedStarterPlan().then((saved) => [saved]))
+      .then((plans) => {
+        if (!active) return;
+        setSavedPlans(plans);
+        // Restore the most recently updated plan when this page is reopened.
+        if (plans.length) {
+          setPlan((current) => current || plans[0]);
+          setInterest((current) => current || plans[0].interest);
+        }
+      })
+      .catch(() => {
+        // An empty folder is a valid first-run state; it must not block plan creation.
+        if (active) setSavedPlans([]);
+      })
+      .finally(() => {
+        if (active) setSavedPlansLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const createPlan = async () => {
     if (interest.trim().length < 8) {
       setError(t("starter.minInterest"));
@@ -51,8 +84,7 @@ export function StarterPlanner({
     try {
       setBusy(true);
       setError("");
-      setPlan(
-        await getStarterPlan({
+      const created = await getStarterPlan({
           interest: interest.trim(),
           weekly_hours: Math.max(1, Number(weeklyHours) || 1),
           weeks: Math.max(1, Number(weeks) || 1),
@@ -62,9 +94,17 @@ export function StarterPlanner({
           experience_level_other: levelOther.trim(),
           goal_other: goalOther.trim(),
           preferred_format_other: formatOther.trim(),
-          language,
-        }),
-      );
+          // Plan content follows the student's request, not the interface
+          // locale. English intent therefore always produces English output.
+          language: detectContentLanguage(interest),
+        });
+      setPlan(created);
+      // POST /starter-plan creates a new durable record. Keep older plans in
+      // the folder instead of replacing the local view with only the latest one.
+      setSavedPlans((current) => [
+        created,
+        ...current.filter((saved) => saved.id !== created.id),
+      ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("starter.failed"));
     } finally {
@@ -72,7 +112,45 @@ export function StarterPlanner({
     }
   };
 
+  const openSavedPlan = (saved: StarterPlan) => {
+    setPlan(saved);
+    setInterest(saved.interest);
+    setError("");
+  };
+
+  const removeSavedPlan = async (saved: StarterPlan) => {
+    if (typeof window !== "undefined" && !window.confirm(t("starter.deleteConfirm"))) {
+      return;
+    }
+    try {
+      setBusy(true);
+      setError("");
+      await deleteStarterPlan(saved.id);
+      setSavedPlans((current) => {
+        const remaining = current.filter((item) => item.id !== saved.id);
+        setPlan((currentPlan) => {
+          if (currentPlan?.id !== saved.id) return currentPlan;
+          const next = remaining[0] || null;
+          if (next) setInterest(next.interest);
+          return next;
+        });
+        return remaining;
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("starter.deleteFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const hasExperience = mode === "experienced";
+  const resultSections = plan
+    ? plan.milestone_sections || {
+        foundation: plan.milestones.slice(0, 1),
+        practice: plan.milestones.slice(1, 2),
+        reflection: plan.milestones.slice(2),
+      }
+    : null;
 
   return (
     <section className="card starter-planner" aria-labelledby="starter-title">
@@ -109,6 +187,45 @@ export function StarterPlanner({
             {t("starter.importCV")}
           </button>
         </div>
+      )}
+      {savedPlans.length > 0 && (
+        <section className="starter-plan-folder" aria-label={t("starter.folderTitle")}>
+          <div className="starter-plan-folder-heading">
+            <div>
+              <p className="section-kicker">SAVED PLANS</p>
+              <h3>{t("starter.folderTitle")}</h3>
+            </div>
+            <span>{t("starter.folderCount", { n: savedPlans.length })}</span>
+          </div>
+          <div className="starter-plan-folder-list">
+            {savedPlans.map((saved) => (
+              <div
+                className={`starter-plan-folder-item ${plan?.id === saved.id ? "selected" : ""}`}
+                key={saved.id}
+              >
+                <button
+                  type="button"
+                  className="starter-plan-folder-open"
+                  onClick={() => openSavedPlan(saved)}
+                  aria-pressed={plan?.id === saved.id}
+                >
+                  <strong>{saved.interest}</strong>
+                  <small>{saved.headline}</small>
+                </button>
+                <button
+                  type="button"
+                  className="starter-plan-folder-delete"
+                  aria-label={`${t("starter.deleteSavedPlan")}: ${saved.interest}`}
+                  disabled={busy}
+                  onClick={() => void removeSavedPlan(saved)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          {savedPlansLoading ? <small className="starter-plan-folder-loading">{t("starter.loadingSavedPlans")}</small> : null}
+        </section>
       )}
       <label>
         {t("starter.prompt")}
@@ -221,13 +338,6 @@ export function StarterPlanner({
         </label>
       </div>
       <div className="starter-actions">
-        <span>
-          {t("starter.hours", {
-            n:
-              Math.max(1, Number(weeklyHours) || 0) *
-              Math.max(1, Number(weeks) || 0),
-          })}
-        </span>
         <button
           type="button"
           disabled={busy || interest.trim().length < 8}
@@ -243,15 +353,20 @@ export function StarterPlanner({
       )}
       {plan && (
         <div className="starter-result" role="status">
-          <h3>{plan.headline}</h3>
           <p>
             <strong>{t("starter.firstAction")}</strong> {plan.first_action}
           </p>
-          <ol>
-            {plan.milestones.map((item) => (
-              <li key={item}>{item}</li>
+          <div className="starter-result-phases">
+            {(["foundation", "practice", "reflection"] as const).map((key) => (
+              <section key={key}>
+                <h3>{t(`resource.starterSection.${key}`)}</h3>
+                <ol>
+                  {(resultSections?.[key] || []).map((item) => <li key={item}>{item}</li>)}
+                  {!resultSections?.[key]?.length && <li>{t("starter.noMilestone")}</li>}
+                </ol>
+              </section>
             ))}
-          </ol>
+          </div>
           <div className="starter-resources">
             {plan.resources.map((item) => (
               <a href={item.url} target="_blank" rel="noreferrer" key={item.id}>
@@ -261,7 +376,6 @@ export function StarterPlanner({
               </a>
             ))}
           </div>
-          <p className="privacy-note">{t("starter.evidenceNote")}</p>
           <div className="starter-result-actions">
             <button
               type="button"

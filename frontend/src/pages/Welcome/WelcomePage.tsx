@@ -5,21 +5,33 @@ import { useT } from "../../i18n/LanguageProvider";
 type Props = {
   onOpenExperienceBank: () => void;
   onOpenLearningPlan: () => void;
+  onPathChange?: (path: "new" | null) => void;
+  initialPath?: "new" | null;
 };
 
 /** A deliberate entry screen for every signed-in user. */
 export function WelcomePage({
   onOpenExperienceBank,
   onOpenLearningPlan,
+  onPathChange,
+  initialPath = null,
 }: Props) {
-  const [path, setPath] = useState<"new" | null>(null);
+  const [path, setPath] = useState<"new" | null>(initialPath);
   const t = useT();
+  const chooseNewPath = () => {
+    setPath("new");
+    onPathChange?.("new");
+  };
+  const leaveNewPath = () => {
+    setPath(null);
+    onPathChange?.(null);
+  };
   if (path === "new")
     return (
       <main className="welcome-page">
         <StarterPlanner
           mode="new"
-          onChangeMode={() => setPath(null)}
+          onChangeMode={leaveNewPath}
           onOpenLearningPlan={onOpenLearningPlan}
         />
       </main>
@@ -35,13 +47,12 @@ export function WelcomePage({
             <span className="welcome-brand-welcome">WELCOME</span>
           </p>
           <h1 id="onboarding-title">{t("starter.welcomeTitle")}</h1>
-          <p className="welcome-intro">{t("starter.welcomeSub")}</p>
         </header>
         <div className="onboarding-choice-grid">
           <button
             type="button"
             className="onboarding-choice-card newcomer"
-            onClick={() => setPath("new")}
+            onClick={chooseNewPath}
           >
             <span aria-hidden="true">✦</span>
             <strong>{t("starter.path.new.title")}</strong>

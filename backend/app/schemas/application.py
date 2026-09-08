@@ -52,6 +52,40 @@ class ApplicationRead(BaseModel):
     created_at: datetime
 
 
+class ManualQuestionCreate(BaseModel):
+    """A question added from the material builder, persisted as a draft."""
+
+    job_id: int = Field(gt=0)
+    question: str = Field(default="", max_length=5000)
+    question_type: str = Field(default="general", max_length=80)
+    max_characters: int = Field(default=300, ge=50, le=5000)
+    required: bool = True
+    answer_tone: Literal["professional", "concise", "enthusiastic", "technical", "reflective"] = "professional"
+    desired_content: str = Field(default="", max_length=1000)
+
+    @field_validator("question", "question_type")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class ManualQuestionUpdate(BaseModel):
+    question: str = Field(default="", max_length=5000)
+    max_characters: int | None = Field(default=None, ge=50, le=5000)
+    answer_tone: Literal["professional", "concise", "enthusiastic", "technical", "reflective"] | None = None
+    desired_content: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("desired_content")
+    @classmethod
+    def normalize_desired_content(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
 class AnswerRead(BaseModel):
     question_id: int
 

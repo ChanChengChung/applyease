@@ -14,6 +14,13 @@ deterministic fallback vocabulary.
 # deterministic matching behaviour is unchanged for skills both lists shared.
 KNOWN_SKILLS = [
     "Python",
+    "OCaml",
+    "Java",
+    "Go",
+    "Rust",
+    "C#",
+    "Scala",
+    "Kotlin",
     "SQL",
     "TypeScript",
     "JavaScript",
@@ -44,4 +51,7 @@ KNOWN_SKILLS = [
     "NLP",
     "Computer Vision",
     "REST APIs",
+    "Linux",
+    "Kubernetes",
+    "AWS",
 ]

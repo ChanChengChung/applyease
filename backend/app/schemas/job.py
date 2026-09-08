@@ -117,6 +117,8 @@ class JobImportDraft(BaseModel):
 class JobRead(JobAnalyzeRequest):
     id: int
 
+    source_url: str = ""
+
     required_skills: list[str]
 
     preferred_skills: list[str]
@@ -124,6 +126,16 @@ class JobRead(JobAnalyzeRequest):
     responsibilities: list[str]
 
     qualifications: list[str]
+
+    library_saved: bool = False
+
+    @field_validator("library_saved", mode="before")
+    @classmethod
+    def normalize_library_saved(cls, value: Any) -> bool:
+        # Older local databases may contain NULL until migration 0030 has
+        # been applied. Treat that legacy state as an unpromoted draft rather
+        # than failing every match-report response.
+        return bool(value) if value is not None else False
 
     created_at: datetime
 

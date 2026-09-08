@@ -3,13 +3,18 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/render";
 
-const resourceApi = vi.hoisted(() => ({ getStarterPlan: vi.fn() }));
+const resourceApi = vi.hoisted(() => ({
+  getStarterPlan: vi.fn(),
+  listStarterPlans: vi.fn(),
+  getSavedStarterPlan: vi.fn(),
+}));
 vi.mock("../../services/resourceApi", () => resourceApi);
 import { WelcomePage } from "./WelcomePage";
 
 describe("WelcomePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resourceApi.listStarterPlans.mockResolvedValue([]);
     resourceApi.getStarterPlan.mockResolvedValue({
       id: 1,
       headline: "Start small",
@@ -36,17 +41,21 @@ describe("WelcomePage", () => {
 
   it("keeps a new student in the dedicated welcome flow", async () => {
     const user = userEvent.setup();
+    const onPathChange = vi.fn();
     renderWithProviders(
       <WelcomePage
         onOpenExperienceBank={vi.fn()}
         onOpenLearningPlan={vi.fn()}
+        onPathChange={onPathChange}
       />,
     );
     await user.click(await screen.findByRole("button", { name: /我刚刚开始/ }));
+    expect(onPathChange).toHaveBeenLastCalledWith("new");
     expect(
       screen.getByText("还没有 CV？先建立第一份可验证成果"),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "返回" }));
+    expect(onPathChange).toHaveBeenLastCalledWith(null);
     expect(await screen.findByText("我们该打造什么？")).toBeInTheDocument();
   });
 });

@@ -66,6 +66,37 @@ def create_with_questions(db: Session, job_id: int, raw_text: str, questions: li
     return application, records
 
 
+def create_question(
+    db: Session,
+    application_id: int,
+    question: str = "",
+    *,
+    question_type: str = "general",
+    max_characters: int = 300,
+    required: bool = True,
+):
+    record = ApplicationQuestion(
+        application_id=application_id,
+        question=question.strip(),
+        question_type=question_type,
+        max_characters=max_characters,
+        required=required,
+        answer={},
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def update_question(db: Session, question: ApplicationQuestion, values: dict):
+    for key, value in values.items():
+        setattr(question, key, value)
+    db.commit()
+    db.refresh(question)
+    return question
+
+
 def save_answer(db: Session, question: ApplicationQuestion, answer: dict):
     question.answer = answer
 

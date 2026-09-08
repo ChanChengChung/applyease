@@ -10,7 +10,7 @@ export type PageId =
   | "tracker"
   | "ai-quality"
   | "security";
-export type NavigationJob = { id: number; title: string; company: string };
+export type NavigationJob = { id: number; title: string; company: string; source_url?: string };
 export type DashboardStep = {
   key: string;
   label: string;

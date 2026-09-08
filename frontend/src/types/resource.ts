@@ -22,6 +22,7 @@ export type LearningResource = {
   link_status?: string;
   last_checked_at?: string | null;
   match_score?: number;
+  match_level?: "very_high" | "high" | "fair" | "low";
   matched_skills?: string[];
   recommendation_reason?: string;
   created_at: string;
@@ -34,6 +35,11 @@ export type StarterPlan = {
   headline: string;
   first_action: string;
   milestones: string[];
+  milestone_sections?: {
+    foundation: string[];
+    practice: string[];
+    reflection: string[];
+  };
   resources: LearningResource[];
   used_fallback: boolean;
   created_at: string;
@@ -42,12 +48,16 @@ export type StarterPlan = {
 export type ResearchPlan = {
   id: number;
   job_id: number;
+  starter_plan_id?: number | null;
+  starter_plan_interest?: string | null;
+  starter_plan_headline?: string | null;
   profile_summary: string;
   gaps: string[];
   method: string[];
   sources: Array<{ title: string; url: string }>;
   searched_at: string;
   used_fallback: boolean;
+  focuses?: Array<"evidence" | "skills" | "materials">;
   created_at: string;
   updated_at: string;
 };

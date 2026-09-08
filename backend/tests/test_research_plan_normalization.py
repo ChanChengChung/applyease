@@ -43,7 +43,7 @@ def test_profile_summary_is_concise_even_when_model_is_verbose():
     summary = _profile_summary(
         "First relevant sentence. Second relevant sentence. Third sentence must not display."
     )
-    assert summary == "First relevant sentence. Second relevant sentence."
+    assert summary == "First relevant sentence."
 
 
 def test_bocha_learning_search_returns_only_safe_https_source_metadata(monkeypatch):

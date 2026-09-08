@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { NavigationJob } from "../../types/dashboard";
 import type { Job } from "../../types/job";
 import type { TrackedApplication } from "../../types/tracker";
 import { useT } from "../../i18n/LanguageProvider";
 import { JobAnalysisPage } from "../JobAnalysis/JobAnalysisPage";
 import { OpportunityRadarPage } from "../OpportunityRadar/OpportunityRadarPage";
+import { listJobs } from "../../services/jobApi";
+import { ROLE_FOLDER_ART } from "../../components/roleFolderAssets";
+import {
+  classifyRole,
+  OPPORTUNITY_FOLDER_KEYS,
+} from "../../utils/roleClassification";
 
 type OpportunityMode = "discover" | "analyze";
 const OPPORTUNITY_HUB_MODE_KEY = "applyease.opportunity-hub-mode";
-
 function getRememberedMode(fallback: OpportunityMode): OpportunityMode {
   try {
     const saved = window.sessionStorage.getItem(OPPORTUNITY_HUB_MODE_KEY);
@@ -37,6 +42,26 @@ export function OpportunityHubPage({
   const [mode, setMode] = useState<OpportunityMode>(() =>
     initialJob ? "analyze" : getRememberedMode(initialMode),
   );
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
+  const [selectedLibraryJob, setSelectedLibraryJob] = useState<Job | undefined>();
+  const [selectedLibraryFolder, setSelectedLibraryFolder] = useState<string | null>(null);
+
+  const refreshSavedJobs = () => {
+    void listJobs().then(setSavedJobs).catch(() => setSavedJobs([]));
+  };
+
+  useEffect(() => {
+    refreshSavedJobs();
+  }, []);
+
+  const groupedJobs = useMemo(() => {
+    const groups = new Map<string, Job[]>();
+    savedJobs.filter((job) => job.library_saved === true).forEach((job) => {
+      const key = classifyRole(job.title, job.company);
+      groups.set(key, [...(groups.get(key) || []), job]);
+    });
+    return groups;
+  }, [savedJobs]);
 
   useEffect(() => {
     try {
@@ -52,10 +77,43 @@ export function OpportunityHubPage({
         <div>
           <p className="eyebrow"><strong>APPLYEASE</strong><span className="page-wordmark">· OPPORTUNITY HUB</span></p>
           <h1>{t("hub.heroTitle")}</h1>
-          <p className="sub">{t("hub.heroSub")}</p>
         </div>
         <div className="hero-orb hero-orb-job" aria-hidden="true"><span>⌁</span></div>
       </header>
+      <section className="opportunity-role-folders opportunity-hub-role-library" aria-label={t("opportunity.foldersTitle")}>
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="section-kicker">ROLE LIBRARY · 01</p>
+              <h2>{t("opportunity.foldersTitle")}</h2>
+              <p>{t("opportunity.foldersSub")}</p>
+            </div>
+          </div>
+          {savedJobs.filter((job) => job.library_saved === true).length === 0 && (
+            <p className="opportunity-folder-empty">{t("opportunity.folderEmpty")}</p>
+          )}
+          <div className="opportunity-folder-grid">
+              {OPPORTUNITY_FOLDER_KEYS.map((folder) => {
+                const jobs = groupedJobs.get(folder) || [];
+                return (
+                    <button type="button" key={folder} className={`opportunity-folder-card ${jobs.length ? "" : "empty"} ${selectedLibraryFolder === folder ? "selected" : ""}`} disabled={!jobs.length} title={jobs.length ? jobs.map((job) => `${job.title} · ${job.company}`).join("\n") : undefined} onClick={() => setSelectedLibraryFolder((current) => current === folder ? null : folder)}>
+                    <img className="opportunity-folder-cover" src={ROLE_FOLDER_ART[folder]} alt="" aria-hidden="true" />
+                    <span><strong>{t(`opportunity.folder.${folder}`)}</strong><small>{t("opportunity.folderCount", { n: jobs.length })}</small></span>
+                    <span className="opportunity-folder-arrow" aria-hidden="true">→</span>
+                  </button>
+                );
+              })}
+          </div>
+          {selectedLibraryFolder && (groupedJobs.get(selectedLibraryFolder) || []).length > 0 && (
+            <div className="opportunity-library-role-list" aria-label={t("opportunity.folderSelectRole")}>
+              {(groupedJobs.get(selectedLibraryFolder) || []).map((job) => (
+                <button key={job.id} type="button" onClick={() => { setSelectedLibraryJob(job); setMode("analyze"); }}>
+                  <strong>{job.title}</strong>
+                  <span>{job.company}</span>
+                </button>
+              ))}
+            </div>
+          )}
+      </section>
       <section className="product-content opportunity-hub-choice" aria-label={t("hub.choiceLabel")}>
         <button
           type="button"
@@ -93,12 +151,15 @@ export function OpportunityHubPage({
         </button>
       </section>
       {mode === "discover" ? (
-        <OpportunityRadarPage hideHero onJobTracked={onJobTracked} />
+        <OpportunityRadarPage hideHero hideRoleLibrary onJobTracked={onJobTracked} />
       ) : (
         <JobAnalysisPage
           hideHero
-          initialJob={initialJob}
-          onJobAnalyzed={onJobAnalyzed}
+          initialJob={selectedLibraryJob || initialJob}
+          onJobAnalyzed={(job) => {
+            refreshSavedJobs();
+            onJobAnalyzed?.(job);
+          }}
           onReturnToDashboard={onReturnToDashboard}
           onOpenResourcePlan={onOpenResourcePlan}
         />

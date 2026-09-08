@@ -44,6 +44,12 @@ describe("ApplicationBuilderPage", () => {
     });
   });
 
+  it("asks the user to select a target before showing application questions", async () => {
+    renderWithProviders(<ApplicationBuilderPage />);
+    expect(screen.getByRole("status")).toHaveTextContent("先选择目标职位");
+    expect(screen.queryByRole("button", { name: "增加申请题" })).not.toBeInTheDocument();
+  });
+
   it("generates a resume and loads version history", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ApplicationBuilderPage initialJobId={3} />);
@@ -106,7 +112,7 @@ describe("ApplicationBuilderPage", () => {
     );
     await user.selectOptions(screen.getByLabelText("回答语气"), "technical");
     await user.type(
-      screen.getByLabelText("希望重点包含什么？"),
+      screen.getByLabelText("希望重点包含什么？ 1"),
       "research mindset",
     );
     await user.click(screen.getByRole("button", { name: "生成申请题答案" }));
@@ -118,6 +124,21 @@ describe("ApplicationBuilderPage", () => {
       "zh-CN",
       { tone: "technical", desiredContent: "research mindset" },
     );
+  });
+
+  it("keeps answer generation actionable and explains when the question is incomplete", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ApplicationBuilderPage initialJobId={3} />);
+
+    const generate = screen.getByRole("button", { name: "生成申请题答案" });
+    expect(generate).not.toBeDisabled();
+
+    await user.click(generate);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "请输入至少 5 个字的申请题目后再生成答案。",
+    );
+    expect(api.generateAnswer).not.toHaveBeenCalled();
   });
 
   it("exports the selected resume template and optional evidence appendix", async () => {

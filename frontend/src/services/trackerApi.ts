@@ -48,11 +48,22 @@ export async function listTracked(
 export async function getTrackerSummary(): Promise<TrackerSummary> {
   return request<TrackerSummary>(`/tracker/applications/summary`);
 }
+export type TrackerReminderOptions = {
+  from_date?: string;
+  to_date?: string;
+  days?: number;
+};
 export async function getTrackerReminders(
-  days = 14,
+  options: TrackerReminderOptions | number = {},
 ): Promise<TrackerReminder[]> {
+  const normalized = typeof options === "number" ? { days: options } : options;
+  const params = new URLSearchParams();
+  if (normalized.from_date) params.set("from_date", normalized.from_date);
+  if (normalized.to_date) params.set("to_date", normalized.to_date);
+  if (normalized.days !== undefined) params.set("days", String(normalized.days));
+  const query = params.toString();
   return request<TrackerReminder[]>(
-    `/tracker/applications/reminders?days=${days}`,
+    `/tracker/applications/reminders${query ? `?${query}` : ""}`,
   );
 }
 export async function getApplicationWorkspace(

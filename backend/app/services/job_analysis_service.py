@@ -9,7 +9,7 @@ from app.models.experience import Experience
 from app.models.job import Job
 from app.schemas.job import JobAnalyzeRequest
 from app.ai.skills import KNOWN_SKILLS
-from app.schemas.job import EligibilityCheck, Evidence, MatchReport
+from app.schemas.job import EligibilityCheck, Evidence, JobRead, MatchReport
 _STOPWORDS = {
     "the",
     "and",
@@ -40,6 +40,31 @@ _ELIGIBILITY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("education", ("currently enrolled", "undergraduate", "bachelor", "master", "degree", "在读", "本科", "硕士", "学位")),
     ("availability", ("availability", "available", "internship period", "duration", "weeks", "start date", "可实习", "实习周期", "每周", "开始日期")),
 ]
+
+# These phrases indicate that a technology is part of the role's expected
+# toolkit.  Merely mentioning a technology in a company overview or a generic
+# example should not turn it into a mandatory skill.  The deterministic rules
+# are also used to supplement an older/LLM-saved analysis on match reports.
+_REQUIRED_SKILL_CONTEXT = (
+    "required",
+    "must have",
+    "must-have",
+    "essential",
+    "minimum",
+    "proficien",
+    "experience with",
+    "familiarity with",
+    "knowledge of",
+    "ability to",
+    "skilled in",
+    "expertise in",
+    "working with",
+    "background in",
+    "primary development language",
+    "programming language",
+    "use ",
+    "using ",
+)
 
 
 def build_preview_job(
@@ -122,12 +147,32 @@ def build_eligibility_checks(job: Job, confirmed: list[Experience]) -> list[Elig
 
 
 def _contains(text: str, phrase: str) -> bool:
+    """Match a skill as a token, not as an arbitrary substring.
 
-    if phrase in {"C", "C++"}:
+    The old substring check made ``data`` match ``candidate`` and ``C`` match
+    ``C++``.  ASCII skill names use English word boundaries while non-ASCII
+    phrases retain a case-insensitive substring match for Chinese text.
+    """
+    value = str(phrase).strip()
+    if not value:
+        return False
 
-        return bool(re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text, re.I))
+    if value == "C":
+        # C is a special case because + and # are not word characters, yet
+        # they are part of neighbouring language names (C++/C#).
+        return bool(re.search(r"(?<![A-Za-z0-9+#])C(?![A-Za-z0-9+#])", text, re.I))
 
-    return phrase.casefold() in text.casefold()
+    if re.fullmatch(r"[A-Za-z0-9+#.\- ]+", value):
+        pattern = r"\s+".join(re.escape(part) for part in value.split())
+        return bool(
+            re.search(
+                rf"(?<![A-Za-z0-9]){pattern}(?![A-Za-z0-9])",
+                text,
+                re.I,
+            )
+        )
+
+    return value.casefold() in text.casefold()
 
 
 def _clean_items(values: list[str] | None, limit: int = 30) -> list[str]:
@@ -144,6 +189,25 @@ def _clean_items(values: list[str] | None, limit: int = 30) -> list[str]:
             seen.add(text.casefold())
 
     return result[:limit]
+
+
+def _skill_in_preferred_context(line: str, skill: str) -> bool:
+    """Return whether a skill occurs in the preferred portion of a line."""
+    lower = line.casefold()
+    for marker in ("preferred", "nice to have", "plus", "bonus"):
+        start = lower.find(marker)
+        if start < 0:
+            continue
+        # Handle both “Preferred: Python” and “Python preferred”.  Restrict
+        # the before-marker check to the current semicolon/pipe clause so a
+        # preceding required skill is not accidentally reclassified.
+        after = line[start + len(marker) :]
+        before = re.split(r"[;|\n]", line[:start])[-1]
+        if "required" in before.casefold() and "," in before:
+            before = before.rsplit(",", 1)[-1]
+        if _contains(after, skill) or _contains(before, skill):
+            return True
+    return False
 
 
 def extract_job_requirements(description: str) -> dict[str, list[str]]:
@@ -166,15 +230,20 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
     for line in lines:
         lower = line.casefold()
 
-        if any(
+        is_required = any(
             word in lower for word in ["required", "must have", "must-have", "essential", "minimum"]
-        ):
+        )
+        is_preferred = any(
+            word in lower for word in ["preferred", "nice to have", "plus", "bonus"]
+        )
+
+        if is_required:
             required.append(line)
 
-        elif any(word in lower for word in ["preferred", "nice to have", "plus", "bonus"]):
+        if is_preferred:
             preferred.append(line)
 
-        elif any(
+        if not is_required and not is_preferred and any(
             word in lower
             for word in [
                 "responsib",
@@ -188,18 +257,43 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         ):
             responsibilities.append(line)
 
-        elif any(
+        elif not is_required and not is_preferred and any(
             word in lower
             for word in ["degree", "qualification", "experience", "eligible", "enrolled"]
         ):
             qualifications.append(line)
-    required_skill_names = [
-        skill for skill in skills if not any(_contains(line, skill) for line in preferred)
-    ] or skills.copy()
-
     preferred_skill_names = [
-        skill for skill in skills if any(_contains(line, skill) for line in preferred)
+        skill for skill in skills if any(_skill_in_preferred_context(line, skill) for line in preferred)
     ]
+
+    # Prefer skills found in explicit requirement/technology context.  This
+    # catches statements such as “OCaml (our primary development language)”
+    # while avoiding incidental mentions in a marketing paragraph.  Keep the
+    # historical fallback for postings that contain no recognisable context.
+    required_context_lines = [
+        line
+        for line in lines
+        if any(marker in line.casefold() for marker in _REQUIRED_SKILL_CONTEXT)
+    ]
+    required_skill_names = [
+        skill
+        for skill in skills
+        if any(_contains(line, skill) for line in required_context_lines)
+        and skill not in preferred_skill_names
+    ]
+    if not required_skill_names:
+        # Do not promote every technology mentioned in an unstructured posting
+        # to a requirement.  Only structured requirement/qualification/
+        # responsibility lines are a safe fallback; otherwise the report keeps
+        # the requirement set empty and explains that no explicit skills were
+        # found instead of manufacturing a match gap.
+        structured_lines = [*required, *qualifications, *responsibilities]
+        required_skill_names = [
+            skill
+            for skill in skills
+            if any(_contains(line, skill) for line in structured_lines)
+            and skill not in preferred_skill_names
+        ]
 
     return {
         "required_skills": _clean_items(required_skill_names),
@@ -207,6 +301,36 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         "responsibilities": _clean_items(responsibilities, 20),
         "qualifications": _clean_items(qualifications, 20),
     }
+
+
+def _resolved_job_skills(job: Job) -> tuple[list[str], list[str]]:
+    """Resolve persisted and deterministic requirements on the server.
+
+    Analyses saved before the stricter extractor (or produced by an LLM that
+    omitted a technology) must not permanently lose requirements.  Merge the
+    persisted values with grounded rule extraction, then keep preferred skills
+    out of the mandatory list.
+    """
+    extracted = extract_job_requirements(job.description or "")
+    required = _clean_items([*(job.required_skills or []), *extracted["required_skills"]])
+    preferred = _clean_items([*(job.preferred_skills or []), *extracted["preferred_skills"]])
+    required_keys = {item.casefold() for item in required}
+    return required, [item for item in preferred if item.casefold() not in required_keys]
+
+
+def _job_read_with_resolved_skills(
+    job: Job, required: list[str], preferred: list[str]
+) -> JobRead:
+    """Expose the same server-resolved skills that the report uses.
+
+    The UI renders the skill chips from ``report.job``.  Returning the original
+    persisted JSON there would make the report say “OCaml is missing” while the
+    required-skills section still showed only the stale Python list.
+    """
+    payload = JobRead.model_validate(job)
+    payload.required_skills = required
+    payload.preferred_skills = preferred
+    return payload
 
 
 def _experience_text(item: Experience) -> str:
@@ -315,15 +439,7 @@ def _relevance_score(job: Job, confirmed: list[Experience]) -> int:
 def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
     confirmed = [item for item in experiences if item.confirmed]
 
-    required = _clean_items(job.required_skills) or _clean_items(
-        extract_job_requirements(job.description)["required_skills"]
-    )
-
-    preferred = [
-        skill
-        for skill in _clean_items(job.preferred_skills)
-        if skill.casefold() not in {item.casefold() for item in required}
-    ]
+    required, preferred = _resolved_job_skills(job)
 
     matched_required, missing_required, required_evidence = _matched(required, confirmed)
 
@@ -363,7 +479,7 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
     overall = min(sum(breakdown.values()), 100)
 
     return MatchReport(
-        job=job,
+        job=_job_read_with_resolved_skills(job, required, preferred),
         overall_score=overall,
         matched_skills=matched_required + matched_preferred,
         missing_skills=missing_required + missing_preferred,

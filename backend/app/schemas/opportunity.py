@@ -49,6 +49,7 @@ class OpportunityMatch(BaseModel):
     next_step: str = Field(default="", max_length=500)
     source_title: str = Field(min_length=1, max_length=240)
     source_url: str = Field(pattern=r"^https://", max_length=2048)
+    folder: str = Field(default="other", max_length=40)
 
 
 class OpportunitySearchRead(BaseModel):

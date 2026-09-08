@@ -1,42 +1,55 @@
+"""Bounded health checks for curated learning-resource links."""
+
 from datetime import datetime, timezone
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from sqlalchemy.orm import Session
 
-def _request(url: str, method: str):
-    headers = {"User-Agent": "ApplyEase-LinkCheck/1.0", "Accept": "text/html,application/xhtml+xml"}
-    if method == "GET":
-        # Verify HEAD-hostile pages without downloading an entire resource.
-        headers["Range"] = "bytes=0-0"
-    return Request(url, method=method, headers=headers)
+from app.models.resource import LearningResource
 
 
-def check_resource_link(resource) -> str:
-    """Check only curated catalogue URLs; no user-controlled URL is fetched."""
-    parsed = urlparse(resource.url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        resource.link_status = "broken"
-        resource.last_checked_at = datetime.now(timezone.utc)
-        return resource.link_status
+def _request(url: str, method: str) -> Request:
+    return Request(
+        url,
+        method=method,
+        headers={"User-Agent": "ApplyEase-resource-health/1.0"},
+    )
 
+
+def _probe(url: str, method: str) -> int:
+    with urlopen(_request(url, method), timeout=5) as response:  # nosec B310: scheme is checked below
+        status = getattr(response, "status", None)
+        if status is None:
+            status = response.getcode()
+        return int(status)
+
+
+def check_url(url: str) -> tuple[bool, str]:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False, "unsupported_url"
     try:
-        with urlopen(_request(resource.url, "HEAD"), timeout=10) as response:
-            status = getattr(response, "status", 200)
+        status = _probe(url, "HEAD")
     except HTTPError as exc:
+        # Some otherwise healthy hosts reject HEAD. A single bounded GET is a
+        # deliberate fallback; we never follow arbitrary redirects ourselves.
         if exc.code not in {405, 501}:
-            status = exc.code
-        else:
-            try:
-                with urlopen(_request(resource.url, "GET"), timeout=10) as response:
-                    status = getattr(response, "status", 200)
-            except HTTPError as fallback_error:
-                status = fallback_error.code
-            except Exception:
-                status = 0
-    except Exception:
-        status = 0
+            return False, f"http_{exc.code}"
+        try:
+            status = _probe(url, "GET")
+        except (OSError, URLError, ValueError):
+            return False, "network_error"
+    except (OSError, URLError, ValueError):
+        return False, "network_error"
+    return status < 400, f"http_{status}"
 
-    resource.link_status = "healthy" if 200 <= status < 400 else "broken"
+
+def update_resource_health(db: Session, resource: LearningResource) -> LearningResource:
+    healthy, _reason = check_url(resource.url)
+    resource.link_status = "healthy" if healthy else "broken"
     resource.last_checked_at = datetime.now(timezone.utc)
-    return resource.link_status
+    db.commit()
+    db.refresh(resource)
+    return resource

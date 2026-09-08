@@ -96,6 +96,56 @@ def _validate_legacy_schema(engine: Engine) -> None:
                     )
                 )
 
+    # Older unversioned databases may already have advisor history without the
+    # structured reply metadata introduced in migration 0028. Add only these
+    # additive, defaulted columns so local demos remain adoptable in-place.
+    if "advisor_conversation_messages" in inspector.get_table_names():
+        advisor_columns = {
+            column["name"]
+            for column in inspector.get_columns("advisor_conversation_messages")
+        }
+        advisor_additions = {
+            "summary": "TEXT NOT NULL DEFAULT ''",
+            "evidence": "JSON NOT NULL DEFAULT '[]'",
+            "gaps": "JSON NOT NULL DEFAULT '[]'",
+            "next_actions": "JSON NOT NULL DEFAULT '[]'",
+            "mode": "VARCHAR(16) NOT NULL DEFAULT 'ai'",
+        }
+        missing_advisor = [
+            (name, definition)
+            for name, definition in advisor_additions.items()
+            if name not in advisor_columns
+        ]
+        if missing_advisor:
+            with engine.begin() as connection:
+                for name, definition in missing_advisor:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE advisor_conversation_messages ADD COLUMN "
+                            f"{name} {definition}"
+                        )
+                    )
+
+    if "research_plans" in inspector.get_table_names():
+        research_columns = {
+            column["name"] for column in inspector.get_columns("research_plans")
+        }
+        if "focuses" not in research_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE research_plans ADD COLUMN focuses JSON")
+                )
+                connection.execute(
+                    text("UPDATE research_plans SET focuses = '[]' WHERE focuses IS NULL")
+                )
+
+    if "jobs" in inspector.get_table_names():
+        job_columns = {column["name"] for column in inspector.get_columns("jobs")}
+        if "source_url" not in job_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE jobs ADD COLUMN source_url VARCHAR(2048)"))
+                connection.execute(text("UPDATE jobs SET source_url = '' WHERE source_url IS NULL"))
+
     actual_tables = set(inspector.get_table_names())
 
     expected_tables = set(Base.metadata.tables)

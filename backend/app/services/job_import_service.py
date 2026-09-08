@@ -6,7 +6,7 @@ import html
 import ipaddress
 import re
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -366,49 +366,52 @@ def import_public_job_page(raw_url: str) -> dict[str, str | bool]:
 
     try:
 
-        with httpx.stream(
-            "GET",
-            url,
-            timeout=settings.job_import_timeout_seconds,
-            follow_redirects=False,
-            headers={"User-Agent": "ApplyEaseJobImporter/1.0 (+local user initiated)"},
-            trust_env=False,
-        ) as response:
+        for _ in range(5):
+            with httpx.stream(
+                "GET", url, timeout=settings.job_import_timeout_seconds,
+                follow_redirects=False,
+                headers={"User-Agent": "ApplyEaseJobImporter/1.0 (+local user initiated)"},
+                trust_env=False,
+            ) as response:
 
-            _verify_connected_peer(response)
+                _verify_connected_peer(response)
 
-            if response.is_redirect:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ValueError("The job page redirected without a destination URL")
+                    url = _public_https_url(urljoin(url, location))
+                    continue
 
-                raise ValueError(
-                    "Redirecting job pages are not imported; open the final public HTTPS URL and try again"
-                )
+                if (
+                    response.status_code != 200
+                    or "html" not in response.headers.get("content-type", "").casefold()
+                ):
 
-            if (
-                response.status_code != 200
-                or "html" not in response.headers.get("content-type", "").casefold()
-            ):
+                    raise ValueError("The URL must return a public HTML job page")
+                declared_size = response.headers.get("content-length")
 
-                raise ValueError("The URL must return a public HTML job page")
-            declared_size = response.headers.get("content-length")
-
-            if (
-                declared_size
-                and declared_size.isdigit()
-                and int(declared_size) > settings.max_job_import_bytes
-            ):
-
-                raise ValueError("The job page exceeds the import size limit")
-            chunks: list[bytes] = []
-            received = 0
-
-            for chunk in response.iter_bytes():
-                received += len(chunk)
-
-                if received > settings.max_job_import_bytes:
+                if (
+                    declared_size
+                    and declared_size.isdigit()
+                    and int(declared_size) > settings.max_job_import_bytes
+                ):
 
                     raise ValueError("The job page exceeds the import size limit")
-                chunks.append(chunk)
-            page = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                chunks: list[bytes] = []
+                received = 0
+
+                for chunk in response.iter_bytes():
+                    received += len(chunk)
+
+                    if received > settings.max_job_import_bytes:
+
+                        raise ValueError("The job page exceeds the import size limit")
+                    chunks.append(chunk)
+                page = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                break
+        else:
+            raise ValueError("The job page redirected too many times")
 
     except httpx.HTTPError as exc:
 

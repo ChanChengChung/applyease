@@ -14,7 +14,12 @@
 //      the caller / UI is responsible for localizing the message (see i18n).
 //   4. Parse and return the JSON body typed as T.
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
+const configuredApi = import.meta.env.VITE_API_URL;
+const runtimeHost = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+// When the UI is opened via localhost, use the same host for API requests.
+// This avoids browsers/proxies treating 127.0.0.1 and localhost as different
+// origins and presenting a misleading connection error on mutations.
+const API = configuredApi || `http://${runtimeHost || "127.0.0.1"}:8000/api/v1`;
 
 /** Error thrown by {@link request} when the response status is not OK. */
 export class ApiRequestError extends Error {

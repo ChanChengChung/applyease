@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "../test/render";
 import { describe, expect, it } from "vitest";
-import { ResumePreview, splitResumeSections } from "./ResumePreview";
+import { normalizeResumeLine, ResumePreview, splitResumeSections } from "./ResumePreview";
 
 const text =
   "SUMMARY\nShort summary\nPROJECTS\n- Built ApplyEase\nEDUCATION\nUniversity";
@@ -34,5 +34,14 @@ describe("ResumePreview", () => {
     );
 
     expect(content).not.toContain("Short summary");
+  });
+
+  it("normalizes legacy localized labels in the English export preview", () => {
+    expect(normalizeResumeLine("技能: MATLAB")).toBe("Skills: MATLAB");
+    expect(normalizeResumeLine("目标职位: Software Engineer")).toBe(
+      "Target Role: Software Engineer",
+    );
+    expect(normalizeResumeLine("相关经历")).toBe("SELECTED EXPERIENCE");
+    expect(normalizeResumeLine("技能: MATLAB", "zh-CN")).toBe("技能: MATLAB");
   });
 });

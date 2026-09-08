@@ -48,8 +48,13 @@ def chat(payload: AdvisorChatRequest, db: Session = Depends(get_db)):
         user_id,
         "assistant",
         reply["answer"],
+        summary=reply.get("summary", ""),
         sources=reply["sources"],
+        evidence=reply.get("evidence", []),
+        gaps=reply.get("gaps", []),
+        next_actions=reply.get("next_actions", []),
         suggested_prompts=reply["suggested_prompts"],
         used_fallback=reply["used_fallback"],
+        mode=reply.get("mode", "fallback" if reply["used_fallback"] else "ai"),
     )
     return reply

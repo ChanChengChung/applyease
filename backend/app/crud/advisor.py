@@ -23,17 +23,27 @@ def append(
     role: str,
     content: str,
     *,
+    summary: str = "",
     sources: list[str] | None = None,
+    evidence: list[dict] | None = None,
+    gaps: list[str] | None = None,
+    next_actions: list[dict] | None = None,
     suggested_prompts: list[str] | None = None,
     used_fallback: bool = False,
+    mode: str = "ai",
 ) -> AdvisorConversationMessage:
     item = AdvisorConversationMessage(
         user_id=user_id,
         role=role,
         content=content,
+        summary=summary,
         sources=sources or [],
+        evidence=evidence or [],
+        gaps=gaps or [],
+        next_actions=next_actions or [],
         suggested_prompts=suggested_prompts or [],
         used_fallback=used_fallback,
+        mode=mode if mode in {"ai", "fallback"} else "ai",
     )
     db.add(item)
     db.commit()

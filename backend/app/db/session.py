@@ -66,7 +66,8 @@ def enforce_owner(execute_state):
 
     from app.models.material import GeneratedMaterial
 
-    from app.models.resource import ResourceFeedback, ResourceProgress
+    from app.models.resource import ResourceProgress
+    from app.models.resource_feedback import ResourceFeedback
     from app.models.research_plan import ResearchPlan
 
     from app.models.tracker import DeadlineReminderDelivery, TrackedApplication

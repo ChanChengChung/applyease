@@ -111,6 +111,13 @@ def test_materials_generate_in_requested_language():
     assert resume.json()["output_language"] == "zh-CN"
     assert "目标职位" in resume.json()["text"]
 
+    cover = client.post(
+        f"/api/v1/materials/cover-letter/generate?job_id={job['id']}&output_language=zh-TW"
+    )
+    assert cover.status_code == 200
+    assert cover.json()["output_language"] == "zh-TW"
+    assert "招聘團隊您好" in cover.json()["text"]
+
     answer = client.post(
         f"/api/v1/materials/answer/generate?job_id={job['id']}",
         json={

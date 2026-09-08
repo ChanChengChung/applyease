@@ -302,7 +302,17 @@ def _safe(
             return result
 
         except ProviderError as exc:
-            result = fallback_call()
+            # A single provider response can fail strict citation/format
+            # validation because of transient truncation or malformed JSON.
+            # Retry the same grounded request once before falling back; this
+            # materially reduces avoidable rule degradations while preserving
+            # the validation boundary.
+            try:
+                result = ai_call()
+                record_outcome(status="success", provider="llm")
+                return result
+            except ProviderError:
+                result = fallback_call()
 
             # The fallback must never pass silently as if it were AI output.
             # Surfaces in the UI (warnings list) that the AI attempt failed

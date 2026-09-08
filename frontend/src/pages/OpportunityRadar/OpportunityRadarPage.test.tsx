@@ -10,8 +10,10 @@ const api = vi.hoisted(() => ({
   importOpportunityAndTrack: vi.fn(),
 }));
 const profileApi = vi.hoisted(() => ({ listExperiences: vi.fn() }));
+const jobApi = vi.hoisted(() => ({ listJobs: vi.fn() }));
 vi.mock("../../services/opportunityApi", () => api);
 vi.mock("../../services/profileApi", () => profileApi);
+vi.mock("../../services/jobApi", () => jobApi);
 
 import { OpportunityRadarPage } from "./OpportunityRadarPage";
 
@@ -61,6 +63,10 @@ describe("OpportunityRadarPage", () => {
         confirmed: true,
       },
     ]);
+    jobApi.listJobs.mockResolvedValue([
+      { id: 1, title: "Quant Technology Intern", company: "Example Capital", library_saved: true },
+      { id: 2, title: "Education Training Intern", company: "Example Education", library_saved: true },
+    ]);
   });
 
   it("requires explicit consent and then searches from the evidence brief", async () => {
@@ -74,15 +80,16 @@ describe("OpportunityRadarPage", () => {
         name: /我同意使用下方已确认经历预览进行公开网络搜索/,
       }),
     );
-    await user.selectOptions(screen.getByLabelText("职业类别"), "quant");
+    await user.selectOptions(screen.getByLabelText("职业类别"), "finance");
     await user.click(screen.getByRole("button", { name: "搜索适合职位" }));
 
     await waitFor(() =>
       expect(api.searchOpportunities).toHaveBeenCalledWith(
         expect.objectContaining({
-          career_goal: "寻找符合我已确认经历的 量化研究与交易 早期职业机会。",
+          career_goal: "寻找符合我已确认经历的 金融 早期职业机会。",
           consent_to_web_search: true,
           experience_ids: [21],
+          search_modes: ["official_ats", "ai"],
         }),
       ),
     );
@@ -161,7 +168,7 @@ describe("OpportunityRadarPage", () => {
 
     await screen.findByText("Quant Technology Intern");
     await user.click(
-      screen.getByRole("button", { name: "审核、导入并加入追踪" }),
+      screen.getByRole("button", { name: "导入到工作台并加入申请追踪" }),
     );
     await waitFor(() =>
       expect(api.importOpportunityAndTrack).toHaveBeenCalledWith(8, 0),
@@ -173,6 +180,37 @@ describe("OpportunityRadarPage", () => {
       expect.objectContaining({ id: 33 }),
       expect.objectContaining({ id: 44, job_id: 33 }),
     );
+  });
+
+  it("groups generated roles into category folders and opens a focused analysis file", async () => {
+    const user = userEvent.setup();
+    api.listOpportunitySearches.mockResolvedValue([
+      {
+        ...search,
+        opportunities: [
+          search.opportunities[0],
+          {
+            ...search.opportunities[0],
+            company: "Example Education",
+            title: "Education Training Intern",
+            evidence_used: ["Python project", "Web project"],
+            gaps_to_address: [],
+          },
+        ],
+      },
+    ]);
+    renderWithProviders(<OpportunityRadarPage />);
+
+    await screen.findByText("Quant Technology Intern");
+    await user.click(screen.getByRole("button", { name: /教育与培训/ }));
+    expect(await screen.findByText("职位分析档案")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("option", { name: /Example Education · Education Training Intern/ }),
+    );
+    expect(screen.getByText("Education Training Intern")).toBeInTheDocument();
+    expect(screen.getByText("申请证据地图")).toBeInTheDocument();
+    expect(screen.getByText("已找到的相关证据")).toBeInTheDocument();
+    expect(screen.queryByText("值得你审核的职位")).not.toBeInTheDocument();
   });
 
   it("deletes a saved research history entry from the API and the page", async () => {
@@ -196,5 +234,23 @@ describe("OpportunityRadarPage", () => {
       ).not.toBeInTheDocument(),
     );
     vi.unstubAllGlobals();
+  });
+
+  it("turns legacy generic history labels into a readable search summary", async () => {
+    api.listOpportunitySearches.mockResolvedValue([
+      {
+        ...search,
+        career_goal: "证据驱动搜索",
+        created_at: "2026-08-21T00:00:00Z",
+      },
+    ]);
+    renderWithProviders(<OpportunityRadarPage />);
+
+    const historyRole = await screen.findByRole("button", {
+      name: /Example Capital · Quant Technology Intern/,
+    });
+    expect(historyRole).toBeInTheDocument();
+    expect(historyRole).toHaveTextContent("1 个职位");
+    expect(screen.queryByText("证据驱动搜索")).not.toBeInTheDocument();
   });
 });

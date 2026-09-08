@@ -16,6 +16,48 @@ function personalDetailRows(description: string) {
     .filter((row): row is { label: string; value: string } => Boolean(row));
 }
 
+type PersonalDetails = {
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  address: string;
+  linkedin: string;
+  github: string;
+};
+
+const PERSONAL_ALIASES: Record<keyof PersonalDetails, string[]> = {
+  name: ["name", "姓名", "名字"],
+  email: ["email", "e-mail", "邮箱", "電郵", "電子郵件"],
+  phone: ["phone", "telephone", "mobile", "电话", "電話", "手机", "手機"],
+  location: ["location", "所在地", "地点", "地點"],
+  address: ["address", "地址"],
+  linkedin: ["linkedin", "领英", "領英"],
+  github: ["github"],
+};
+
+function personalDetailsFromDescription(description: string): PersonalDetails {
+  const result: PersonalDetails = {
+    name: "",
+    email: "",
+    phone: "",
+    location: "",
+    address: "",
+    linkedin: "",
+    github: "",
+  };
+  for (const row of personalDetailRows(description)) {
+    const key = row.label.trim().toLowerCase();
+    for (const field of Object.keys(PERSONAL_ALIASES) as Array<keyof PersonalDetails>) {
+      if (PERSONAL_ALIASES[field].some((alias) => alias.toLowerCase() === key)) {
+        result[field] = row.value;
+        break;
+      }
+    }
+  }
+  return result;
+}
+
 export function ExperienceCard({
   item,
   onSave,
@@ -23,7 +65,6 @@ export function ExperienceCard({
   selected = false,
   onSelect,
   impact,
-  onExploreOpportunities,
 }: {
   item: Experience;
   onSave: (item: Experience) => Promise<void>;
@@ -31,7 +72,6 @@ export function ExperienceCard({
   selected?: boolean;
   onSelect?: (selected: boolean) => void;
   impact?: ExperienceImpact;
-  onExploreOpportunities?: () => void;
 }) {
   const [draft, setDraft] = useState(item);
   const [skillsInput, setSkillsInput] = useState(item.skills.join(", "));
@@ -40,10 +80,32 @@ export function ExperienceCard({
   const [folderDraft, setFolderDraft] = useState<ExperienceCategory>(
     item.category,
   );
+  const [personalDraft, setPersonalDraft] = useState<PersonalDetails>(() =>
+    personalDetailsFromDescription(item.description),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
   const t = useT();
+
+  const personalFieldLabels: Record<keyof PersonalDetails, string> = {
+    name: t("builder.name"),
+    email: t("builder.email"),
+    phone: t("builder.phone"),
+    location: t("builder.location"),
+    address: t("profile.personal.address"),
+    linkedin: t("builder.linkedin"),
+    github: t("builder.github"),
+  };
+  const personalSerializedLabels: Record<keyof PersonalDetails, string> = {
+    name: "Name",
+    email: "Email",
+    phone: "Phone",
+    location: "Location",
+    address: "Address",
+    linkedin: "LinkedIn",
+    github: "GitHub",
+  };
+
   const achievementSources = [
     ...new Set(
       item.achievements
@@ -57,12 +119,17 @@ export function ExperienceCard({
   const reset = () => {
     setDraft(item);
     setSkillsInput(item.skills.join(", "));
+    setPersonalDraft(personalDetailsFromDescription(item.description));
     setEditing(false);
     setError("");
   };
 
   const save = async () => {
-    if (!draft.title.trim()) {
+    if (
+      draft.category === "personal"
+        ? !personalDraft.name.trim()
+        : !draft.title.trim()
+    ) {
       setError(t("shared.titleEmpty"));
       return;
     }
@@ -77,7 +144,19 @@ export function ExperienceCard({
       ),
     ];
     try {
-      await onSave({ ...draft, title: draft.title.trim(), skills });
+      const personalDescription = Object.entries(personalDraft)
+        .filter(([, value]) => value.trim())
+        .map(
+          ([field, value]) =>
+            `${personalSerializedLabels[field as keyof PersonalDetails]}: ${value.trim()}`,
+        )
+        .join("\n");
+      await onSave({
+        ...draft,
+        title: draft.category === "personal" ? personalDraft.name.trim() || draft.title.trim() : draft.title.trim(),
+        description: draft.category === "personal" ? personalDescription : draft.description,
+        skills,
+      });
       setEditing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("shared.saveFailed"));
@@ -168,6 +247,7 @@ export function ExperienceCard({
                   })
                 }
               >
+                <option value="personal">{t("profile.category.personal")}</option>
                 <option value="education">
                   {t("profile.category.education")}
                 </option>
@@ -183,15 +263,31 @@ export function ExperienceCard({
                 <option value="project">{t("profile.category.project")}</option>
               </select>
             </label>
-            <label className="form-field form-field-wide">
-              {t("profile.field.desc")}
-              <textarea
-                value={draft.description}
-                onChange={(e) =>
-                  setDraft({ ...draft, description: e.target.value })
-                }
-              />
-            </label>
+            {draft.category === "personal" ? (
+              <div className="personal-edit-grid form-field-wide">
+                {(Object.keys(PERSONAL_ALIASES) as Array<keyof PersonalDetails>).map((field) => (
+                  <label className="form-field" key={field}>
+                    {personalFieldLabels[field]}
+                    <input
+                      value={personalDraft[field]}
+                      onChange={(event) =>
+                        setPersonalDraft({ ...personalDraft, [field]: event.target.value })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <label className="form-field form-field-wide">
+                {t("profile.field.desc")}
+                <textarea
+                  value={draft.description}
+                  onChange={(e) =>
+                    setDraft({ ...draft, description: e.target.value })
+                  }
+                />
+              </label>
+            )}
             <label className="form-field">
               {t("profile.field.skills")}
               <input
@@ -200,24 +296,26 @@ export function ExperienceCard({
               />
             </label>
           </div>
-          <fieldset>
-            <legend>{t("shared.achievements")}</legend>
-            {draft.achievements.map((a, i) => (
-              <label key={`${a.source}-${i}`}>
-                {t("shared.achievement", { n: i + 1 })}
-                <textarea
-                  aria-label={`${t("shared.achievement", { n: i + 1 })}`}
-                  value={a.text}
-                  onChange={(e) => updateAchievement(i, e.target.value)}
-                />
-                <small>
-                  {t("shared.source", {
-                    src: a.source || t("shared.orgEmpty"),
-                  })}
-                </small>
-              </label>
-            ))}
-          </fieldset>
+          {draft.category !== "personal" && (
+            <fieldset>
+              <legend>{t("shared.achievements")}</legend>
+              {draft.achievements.map((a, i) => (
+                <label key={`${a.source}-${i}`}>
+                  {t("shared.achievement", { n: i + 1 })}
+                  <textarea
+                    aria-label={`${t("shared.achievement", { n: i + 1 })}`}
+                    value={a.text}
+                    onChange={(e) => updateAchievement(i, e.target.value)}
+                  />
+                  <small>
+                    {t("shared.source", {
+                      src: a.source || t("shared.orgEmpty"),
+                    })}
+                  </small>
+                </label>
+              ))}
+            </fieldset>
+          )}
 
           {error && (
             <p role="alert" className="error">
@@ -230,7 +328,12 @@ export function ExperienceCard({
             </button>
             <button
               onClick={() => void save()}
-              disabled={saving || !draft.title.trim()}
+              disabled={
+                saving ||
+                (draft.category === "personal"
+                  ? !personalDraft.name.trim()
+                  : !draft.title.trim())
+              }
             >
               {saving ? t("shared.saving") : t("shared.saveEdit")}
             </button>
@@ -287,6 +390,7 @@ export function ExperienceCard({
                 onClick={() => {
                   setDraft(item);
                   setSkillsInput(item.skills.join(", "));
+                  setPersonalDraft(personalDetailsFromDescription(item.description));
                   setEditing(true);
                 }}
                 disabled={saving}
@@ -328,6 +432,9 @@ export function ExperienceCard({
                     setFolderDraft(event.target.value as ExperienceCategory)
                   }
                 >
+                  <option value="personal">
+                    {t("profile.category.personal")}
+                  </option>
                   <option value="education">
                     {t("profile.category.education")}
                   </option>
@@ -406,14 +513,6 @@ export function ExperienceCard({
                   </p>
                   <strong>{t("profile.evidenceReady")}</strong>
                 </div>
-                {onExploreOpportunities && (
-                  <button
-                    className="text-action"
-                    onClick={onExploreOpportunities}
-                  >
-                    {t("profile.useForRadar")} →
-                  </button>
-                )}
               </div>
               <div className="experience-impact-stats">
                 <span>

@@ -48,10 +48,8 @@ const EXPERIENCE_FOLDERS: Array<{
 ];
 
 export function ProfilePage({
-  onExploreOpportunities,
   onReturnWelcome,
 }: {
-  onExploreOpportunities?: () => void;
   onReturnWelcome?: () => void;
 }) {
   const [items, setItems] = useState<Experience[]>([]);
@@ -916,7 +914,6 @@ export function ProfilePage({
                       selected={selectedIds.includes(item.id)}
                       onSelect={(selected) => toggleSelected(item.id, selected)}
                       impact={impacts[item.id]}
-                      onExploreOpportunities={onExploreOpportunities}
                     />
                   ))}
               </div>

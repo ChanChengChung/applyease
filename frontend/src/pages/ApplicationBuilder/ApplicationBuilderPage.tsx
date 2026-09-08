@@ -43,6 +43,29 @@ import type {
   ResumeTemplate,
 } from "../../types/material";
 import { useI18n, useT } from "../../i18n/LanguageProvider";
+import { matchLevelForScore } from "../../utils/matchLevel";
+import {
+  createManualQuestion,
+  getLatestApplication,
+  updateManualQuestion,
+} from "../../services/applicationApi";
+
+type ApplicationQuestionDraft = {
+  id: number;
+  text: string;
+  serverId?: number;
+  maxCharacters: number;
+  answerTone: AnswerTone;
+  desiredContent: string;
+};
+
+const newQuestionDraft = (id: number): ApplicationQuestionDraft => ({
+  id,
+  text: "",
+  maxCharacters: 300,
+  answerTone: "professional",
+  desiredContent: "",
+});
 
 export function ApplicationBuilderPage({
   initialJobId,
@@ -57,6 +80,13 @@ export function ApplicationBuilderPage({
 }) {
   const [jobId, setJobId] = useState(initialJobId ? String(initialJobId) : "");
   const [question, setQuestion] = useState("");
+  const [questionDrafts, setQuestionDrafts] = useState<ApplicationQuestionDraft[]>([
+    newQuestionDraft(1),
+  ]);
+  const [activeQuestionId, setActiveQuestionId] = useState(1);
+  const [applicationId, setApplicationId] = useState<number | null>(null);
+  const [questionBusy, setQuestionBusy] = useState(false);
+  const questionSaveRef = useRef<Promise<void> | null>(null);
   const [limit, setLimit] = useState("300");
   const [answerTone, setAnswerTone] = useState<AnswerTone>("professional");
   const [desiredContent, setDesiredContent] = useState("");
@@ -213,6 +243,71 @@ export function ApplicationBuilderPage({
   }, []);
   useEffect(() => {
     const id = Number(jobId);
+    let active = true;
+    // Material versions belong to a target job. Clear the previous role's
+    // editor immediately, then hydrate only this role's saved versions.
+    setMaterial(null);
+    setHistory([]);
+    setComparison(null);
+    setLiveResumeText(null);
+    if (!Number.isInteger(id) || id <= 0) return () => { active = false; };
+    void listMaterials(id)
+      .then((versions) => {
+        if (!active) return;
+        setHistory(versions);
+        setMaterial(versions[0] || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setHistory([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [jobId]);
+  useEffect(() => {
+    const id = Number(jobId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setApplicationId(null);
+      setQuestionDrafts([newQuestionDraft(1)]);
+      setActiveQuestionId(1);
+      setQuestion("");
+      return;
+    }
+    let active = true;
+    void getLatestApplication(id)
+      .then((saved) => {
+        if (!active) return;
+        setApplicationId(saved.id);
+        const drafts = saved.questions.map((item) => ({
+          id: item.id,
+          serverId: item.id,
+          text: item.question,
+          maxCharacters: item.max_characters,
+          answerTone: (item.answer?.metadata?.answer_tone as AnswerTone) || "professional",
+          desiredContent: item.answer?.metadata?.desired_content || "",
+        }));
+        const next = drafts.length ? drafts : [newQuestionDraft(1)];
+        setQuestionDrafts(next);
+        setActiveQuestionId(next[0].id);
+        setQuestion(next[0].text);
+        setLimit(String(next[0].maxCharacters));
+        setAnswerTone(next[0].answerTone);
+        setDesiredContent(next[0].desiredContent);
+      })
+      .catch(() => {
+        if (!active) return;
+        setApplicationId(null);
+        setQuestionDrafts([newQuestionDraft(1)]);
+        setActiveQuestionId(1);
+        setQuestion("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [jobId]);
+  useEffect(() => {
+    const id = Number(jobId);
     if (!Number.isInteger(id) || id <= 0) {
       setReadiness(null);
       return;
@@ -312,9 +407,163 @@ export function ApplicationBuilderPage({
     }
   };
 
-  const run = async (kind: "resume" | "cover" | "answer") => {
+  const persistQuestion = async (draft: ApplicationQuestionDraft, text: string) => {
+    const job = Number(jobId);
+    if (!Number.isInteger(job) || job <= 0) return draft;
+    if (applicationId && draft.serverId) {
+      await updateManualQuestion(applicationId, draft.serverId, {
+        question: text,
+        maxCharacters: draft.maxCharacters,
+        answerTone: draft.answerTone,
+        desiredContent: draft.desiredContent,
+      });
+      return { ...draft, text };
+    }
+    const saved = await createManualQuestion(job, text, {
+      maxCharacters: draft.maxCharacters,
+      answerTone: draft.answerTone,
+      desiredContent: draft.desiredContent,
+    });
+    setApplicationId(saved.id);
+    const created = saved.questions[saved.questions.length - 1];
+    return created
+      ? {
+          ...draft,
+          id: created.id,
+          serverId: created.id,
+          text: created.question,
+          maxCharacters: created.max_characters,
+        }
+      : draft;
+  };
+
+  const saveActiveQuestion = async () => {
+    if (questionSaveRef.current) {
+      await questionSaveRef.current;
+      return;
+    }
+    const draft = questionDrafts.find((item) => item.id === activeQuestionId);
+    if (!draft) return;
+    const operation = (async () => {
+      setQuestionBusy(true);
+      try {
+        const saved = await persistQuestion(draft, question);
+        if (saved.serverId) {
+          setQuestionDrafts((current) =>
+            current.map((item) => (item.id === draft.id ? saved : item)),
+          );
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("builder.questionSaveFailed"));
+      } finally {
+        setQuestionBusy(false);
+      }
+    })();
+    questionSaveRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      if (questionSaveRef.current === operation) questionSaveRef.current = null;
+    }
+  };
+
+  const saveQuestionDraft = async (draftId: number) => {
+    if (questionSaveRef.current) {
+      await questionSaveRef.current;
+      return;
+    }
+    const draft = questionDrafts.find((item) => item.id === draftId);
+    if (!draft) return;
+    const operation = (async () => {
+      setQuestionBusy(true);
+      try {
+        const saved = await persistQuestion(draft, draft.text);
+        if (saved.serverId) {
+          setQuestionDrafts((current) =>
+            current.map((item) => (item.id === draft.id ? saved : item)),
+          );
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("builder.questionSaveFailed"));
+      } finally {
+        setQuestionBusy(false);
+      }
+    })();
+    questionSaveRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      if (questionSaveRef.current === operation) questionSaveRef.current = null;
+    }
+  };
+
+  const addApplicationQuestion = async () => {
+    const nextId = Math.min(...questionDrafts.map((item) => item.id), 0) - 1;
+    setQuestionBusy(true);
+    setError("");
+    try {
+      // Clicking this button blurs the textarea first. Wait for that save so
+      // an unsaved first question cannot race and create a duplicate shell.
+      if (questionSaveRef.current) await questionSaveRef.current;
+      const draft = newQuestionDraft(nextId);
+      const saved = Number(jobId) > 0
+        ? await createManualQuestion(Number(jobId), "", {
+            maxCharacters: draft.maxCharacters,
+            answerTone: draft.answerTone,
+            desiredContent: draft.desiredContent,
+          })
+        : null;
+      if (saved) {
+        setApplicationId(saved.id);
+        const created = saved.questions[saved.questions.length - 1];
+        if (created) {
+          const drafts = saved.questions.map((item) => ({
+            id: item.id,
+            serverId: item.id,
+            text: item.question,
+            maxCharacters: item.max_characters,
+            answerTone: (item.answer?.metadata?.answer_tone as AnswerTone) || "professional",
+            desiredContent: item.answer?.metadata?.desired_content || "",
+          }));
+          setQuestionDrafts(drafts);
+          setActiveQuestionId(created.id);
+          setQuestion(created.question);
+        }
+      } else {
+        setQuestionDrafts((current) => [...current, draft]);
+        setActiveQuestionId(nextId);
+        setQuestion("");
+      }
+      window.requestAnimationFrame(() => questionInput.current?.focus());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("builder.questionSaveFailed"));
+    } finally {
+      setQuestionBusy(false);
+    }
+  };
+
+  const selectApplicationQuestion = (id: number) => {
+    const next = questionDrafts.find((item) => item.id === id);
+    if (!next) return;
+    setActiveQuestionId(id);
+    setQuestion(next.text);
+    setLimit(String(next.maxCharacters));
+    setAnswerTone(next.answerTone);
+    setDesiredContent(next.desiredContent);
+  };
+
+  const run = async (kind: "resume" | "cover" | "answer", questionDraft?: ApplicationQuestionDraft) => {
     const id = validJobId();
     if (!id) return;
+    const answerQuestion = questionDraft?.text ?? question;
+    const answerLimit = questionDraft?.maxCharacters ?? Number(limit);
+    const answerToneValue = questionDraft?.answerTone ?? answerTone;
+    const answerDesiredContent = questionDraft?.desiredContent ?? desiredContent;
+    if (kind === "answer" && answerQuestion.trim().length < 5) {
+      setError(t("builder.questionRequired"));
+      questionInput.current?.focus();
+      return;
+    }
     setBusy(true);
     setError("");
     setStepIndex(0);
@@ -324,9 +573,9 @@ export function ApplicationBuilderPage({
           ? await generateResume(id, outputLanguage)
           : kind === "cover"
             ? await generateCoverLetter(id, outputLanguage)
-            : await generateAnswer(id, question, Number(limit), outputLanguage, {
-                tone: answerTone,
-                desiredContent: desiredContent.trim(),
+            : await generateAnswer(id, answerQuestion, answerLimit, outputLanguage, {
+                tone: answerToneValue,
+                desiredContent: answerDesiredContent.trim(),
               });
       setMaterial(generated);
       // These steps advance only after their real corresponding operation, not
@@ -599,32 +848,34 @@ export function ApplicationBuilderPage({
               <p>{t("builder.actionSub")}</p>
             </div>
           </div>
-          <label>
-            {t("resource.target")}
-            <select
-              aria-label={t("resource.target")}
-              value={jobId}
-              onChange={(e) => {
-                setJobId(e.target.value);
-                const job = jobs.find((item) => item.id === Number(e.target.value));
-                if (job) onJobSelected?.({ id: job.id, title: job.title, company: job.company });
-              }}
+          <div className="target-selection-group">
+            <label>
+              {t("resource.target")}
+              <select
+                aria-label={t("resource.target")}
+                value={jobId}
+                onChange={(e) => {
+                  setJobId(e.target.value);
+                  const job = jobs.find((item) => item.id === Number(e.target.value));
+                  if (job) onJobSelected?.({ id: job.id, title: job.title, company: job.company });
+                }}
+              >
+                <option value="">{t("resource.selectTarget")}</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.company} · {job.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="target-creator-toggle"
+              onClick={() => setTargetCreatorOpen((open) => !open)}
             >
-              <option value="">{t("resource.selectTarget")}</option>
-              {jobs.map((job) => (
-                <option key={job.id} value={job.id}>
-                  {job.company} · {job.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="target-creator-toggle"
-            onClick={() => setTargetCreatorOpen((open) => !open)}
-          >
-            {targetCreatorOpen ? t("builder.closeTargetCreator") : t("builder.addTarget")}
-          </button>
+              {targetCreatorOpen ? t("builder.closeTargetCreator") : t("builder.addTarget")}
+            </button>
+          </div>
           {targetCreatorOpen && (
             <section className="target-creator" aria-label={t("builder.addTarget")}>
               <div className="target-creator-tabs" role="tablist">
@@ -764,6 +1015,7 @@ export function ApplicationBuilderPage({
               </button>
             </div>
           </div>
+          {jobId ? (
           <section className="application-question-studio">
             <div className="question-studio-heading">
               <span aria-hidden="true">✦</span>
@@ -776,10 +1028,8 @@ export function ApplicationBuilderPage({
                 <button
                   type="button"
                   className="ghost-action"
-                  onClick={() => {
-                    setQuestion("");
-                    questionInput.current?.focus();
-                  }}
+                  disabled={questionBusy}
+                  onClick={addApplicationQuestion}
                 >
                   {t("builder.addQuestion")}
                 </button>
@@ -793,67 +1043,134 @@ export function ApplicationBuilderPage({
                 </button>
               </div>
             </div>
-            <div className="question-input-grid">
-              <label>
-                {t("builder.question")}
-                <textarea
-                  ref={questionInput}
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={t("builder.questionPlaceholder")}
-                />
-              </label>
-              <label>
-                {t("builder.maxChars")}
-                <input
-                  type="number"
-                  min="50"
-                  max="5000"
-                  value={limit}
-                  onChange={(e) => setLimit(e.target.value)}
-                />
-              </label>
-              <label>
-                {t("builder.answerTone")}
-                <select
-                  value={answerTone}
-                  onChange={(event) =>
-                    setAnswerTone(event.target.value as AnswerTone)
-                  }
+            <div className="application-question-list" aria-label={t("builder.questionEditor")}>
+              {questionDrafts.map((item, index) => (
+                <section
+                  className={`application-question-card ${activeQuestionId === item.id ? "active" : ""}`}
+                  key={item.id}
+                  onFocusCapture={() => selectApplicationQuestion(item.id)}
                 >
-                  <option value="professional">{t("builder.tone.professional")}</option>
-                  <option value="concise">{t("builder.tone.concise")}</option>
-                  <option value="enthusiastic">{t("builder.tone.enthusiastic")}</option>
-                  <option value="technical">{t("builder.tone.technical")}</option>
-                  <option value="reflective">{t("builder.tone.reflective")}</option>
-                </select>
-              </label>
-              <label className="question-preference-field">
-                {t("builder.desiredContent")}
-                <input
-                  aria-label={t("builder.desiredContent")}
-                  value={desiredContent}
-                  maxLength={1000}
-                  onChange={(event) => setDesiredContent(event.target.value)}
-                  placeholder={t("builder.desiredContentPlaceholder")}
-                />
-                <small>{t("builder.desiredContentHelp")}</small>
-              </label>
-              <button
-                className="question-generate-cta"
-                disabled={
-                  busy ||
-                  !jobId ||
-                  question.trim().length < 5 ||
-                  Number(limit) < 50 ||
-                  Number(limit) > 5000
-                }
-                onClick={() => void run("answer")}
-              >
-                {busy ? t("builder.processing") : t("builder.genAnswer")}
-              </button>
+                  <div className="application-question-card-heading">
+                    <span>{t("builder.questionItem", { n: index + 1 })}</span>
+                    <strong>{item.text.trim() ? t("builder.questionReady") : t("builder.questionEmpty")}</strong>
+                  </div>
+                  <div className="question-input-grid">
+                    <label htmlFor={`application-question-${item.id}`}>
+                      {t("builder.questionItem", { n: index + 1 })}
+                      <textarea
+                        id={`application-question-${item.id}`}
+                        ref={activeQuestionId === item.id ? questionInput : undefined}
+                        aria-label={
+                          questionDrafts.length === 1
+                            ? t("builder.question")
+                            : `${t("builder.question")} ${index + 1}`
+                        }
+                        value={item.text}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setQuestion(value);
+                          setQuestionDrafts((current) =>
+                            current.map((draft) =>
+                              draft.id === item.id ? { ...draft, text: value } : draft,
+                            ),
+                          );
+                        }}
+                        onBlur={() => void saveQuestionDraft(item.id)}
+                        placeholder={t("builder.questionPlaceholder")}
+                      />
+                    </label>
+                    <label htmlFor={`application-question-max-${item.id}`}>
+                      {t("builder.maxChars")}
+                      <input
+                        id={`application-question-max-${item.id}`}
+                        type="number"
+                        min="50"
+                        max="5000"
+                        value={item.maxCharacters}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          const maxCharacters = Number(value);
+                          setLimit(value);
+                          setQuestionDrafts((current) =>
+                            current.map((draft) =>
+                              draft.id === item.id && Number.isInteger(maxCharacters)
+                                ? { ...draft, maxCharacters }
+                                : draft,
+                            ),
+                          );
+                        }}
+                        onBlur={() => void saveQuestionDraft(item.id)}
+                      />
+                    </label>
+                    <label htmlFor={`application-question-tone-${item.id}`}>
+                      {t("builder.answerTone")}
+                      <select
+                        id={`application-question-tone-${item.id}`}
+                        value={item.answerTone}
+                        onChange={(event) => {
+                          const value = event.target.value as AnswerTone;
+                          setAnswerTone(value);
+                          setQuestionDrafts((current) =>
+                            current.map((draft) =>
+                              draft.id === item.id ? { ...draft, answerTone: value } : draft,
+                            ),
+                          );
+                        }}
+                        onBlur={() => void saveQuestionDraft(item.id)}
+                      >
+                        <option value="professional">{t("builder.tone.professional")}</option>
+                        <option value="concise">{t("builder.tone.concise")}</option>
+                        <option value="enthusiastic">{t("builder.tone.enthusiastic")}</option>
+                        <option value="technical">{t("builder.tone.technical")}</option>
+                        <option value="reflective">{t("builder.tone.reflective")}</option>
+                      </select>
+                    </label>
+                    <label className="question-preference-field" htmlFor={`application-question-focus-${item.id}`}>
+                      {t("builder.desiredContent")}
+                      <input
+                        id={`application-question-focus-${item.id}`}
+                        aria-label={`${t("builder.desiredContent")} ${index + 1}`}
+                        value={item.desiredContent}
+                        maxLength={1000}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setDesiredContent(value);
+                          setQuestionDrafts((current) =>
+                            current.map((draft) =>
+                              draft.id === item.id ? { ...draft, desiredContent: value } : draft,
+                            ),
+                          );
+                        }}
+                        onBlur={() => void saveQuestionDraft(item.id)}
+                        placeholder={t("builder.desiredContentPlaceholder")}
+                      />
+                      <small>{t("builder.desiredContentHelp")}</small>
+                    </label>
+                    <button
+                      type="button"
+                      className="question-generate-cta"
+                      disabled={
+                        busy ||
+                        item.maxCharacters < 50 ||
+                        item.maxCharacters > 5000
+                      }
+                      onClick={() => {
+                        selectApplicationQuestion(item.id);
+                        void run("answer", item);
+                      }}
+                    >
+                      {busy && activeQuestionId === item.id ? t("builder.processing") : t("builder.genAnswer")}
+                    </button>
+                  </div>
+                </section>
+              ))}
             </div>
           </section>
+          ) : (
+            <div className="application-question-empty" role="status">
+              {t("builder.selectRoleForQuestions")}
+            </div>
+          )}
         </div>
 
         {interviewReport && <QuantInternshipReadinessPack report={interviewReport} />}
@@ -879,8 +1196,8 @@ export function ApplicationBuilderPage({
                         : t("builder.readinessNeedsPreparation")}
                     </p>
                   </div>
-                  <div className="preflight-score" aria-label={t("builder.matchScore", { score: readiness.match_score, warnings: readiness.warnings })}>
-                    <strong>{readiness.match_score}</strong><small>/100</small>
+                  <div className="preflight-score" aria-label={`${t("builder.preflightScore")} ${t(`job.matchLevel.${matchLevelForScore(readiness.match_score)}`)}`}>
+                    <strong>{t(`job.matchLevel.${matchLevelForScore(readiness.match_score)}`)}</strong>
                     <span>{t("builder.preflightScore")}</span>
                   </div>
                 </div>
@@ -1092,6 +1409,7 @@ export function ApplicationBuilderPage({
                 appearance={resumeAppearance}
                 order={sectionOrder}
                 hidden={hiddenSections}
+                outputLanguage={material.output_language}
               />
               <div className="resume-export-actions">
                 <button

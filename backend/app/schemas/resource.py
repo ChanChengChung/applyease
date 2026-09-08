@@ -46,7 +46,14 @@ class ResourceRead(BaseModel):
 
     completed: bool = False
 
-    match_score: int = Field(default=0, ge=0, le=100)
+    # A resource payload always has either a job-specific score or the
+    # deterministic saved-resource baseline; zero is not a valid user-facing
+    # match result.
+    match_score: int = Field(default=50, ge=1, le=100)
+
+    # A human-readable band is the public contract; the numeric score remains
+    # available for internal ranking and backwards compatibility only.
+    match_level: Literal["very_high", "high", "fair", "low"] = "fair"
 
     matched_skills: list[str] = Field(default_factory=list)
 
@@ -62,16 +69,24 @@ class ResourceComplete(BaseModel):
 
 
 class ResourceFeedbackCreate(BaseModel):
-    category: Literal["broken_link", "outdated_content", "other"] = "broken_link"
-    message: str = Field(min_length=3, max_length=1000)
+    category: Literal["outdated_content", "broken_link", "inaccurate_metadata", "other"]
+    message: str = Field(min_length=1, max_length=2000)
 
     @field_validator("message")
     @classmethod
     def normalize_message(cls, value: str) -> str:
-        normalized = value.strip()
-        if len(normalized) < 3:
-            raise ValueError("message must contain at least 3 non-whitespace characters")
-        return normalized
+        value = value.strip()
+        if not value:
+            raise ValueError("message must not be blank")
+        return value
+
+
+class ResourceFeedbackRead(ResourceFeedbackCreate):
+    id: int
+    resource_id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ResourceExperienceDraftRequest(BaseModel):
@@ -131,6 +146,7 @@ class StarterPlanRead(BaseModel):
     headline: str
     first_action: str
     milestones: list[str]
+    milestone_sections: dict[str, list[str]] = Field(default_factory=dict)
     resources: list[ResourceRead]
     used_fallback: bool = False
     created_at: datetime
@@ -146,6 +162,7 @@ class StarterPlanUpdate(BaseModel):
     headline: str = Field(min_length=1, max_length=2000)
     first_action: str = Field(min_length=1, max_length=2000)
     milestones: list[str] = Field(min_length=1, max_length=20)
+    milestone_sections: dict[str, list[str]] = Field(default_factory=dict)
 
     @field_validator("focus", "headline", "first_action")
     @classmethod
@@ -161,6 +178,17 @@ class StarterPlanUpdate(BaseModel):
         if any(len(value) > 1000 for value in cleaned):
             raise ValueError("each milestone must be at most 1000 characters")
         return cleaned
+
+    @field_validator("milestone_sections")
+    @classmethod
+    def normalize_milestone_sections(cls, values: dict[str, list[str]]) -> dict[str, list[str]]:
+        allowed = {"foundation", "practice", "reflection"}
+        cleaned = {
+            key: [item.strip() for item in items if item.strip()]
+            for key, items in values.items()
+            if key in allowed
+        }
+        return {key: cleaned.get(key, []) for key in allowed}
 
 
 class StarterPlanRefineRequest(BaseModel):
@@ -179,11 +207,15 @@ class StarterPlanRefineRequest(BaseModel):
 
 class ResearchPlanRequest(BaseModel):
     job_id: int = Field(gt=0)
+    starter_plan_id: int | None = Field(default=None, gt=0)
     weekly_hours: int = Field(ge=1, le=30)
     weeks: int = Field(ge=1, le=16)
     goal: Literal["skills", "project", "interview"] = "project"
     learning_style: Literal["hands_on", "guided", "intensive"] = "hands_on"
     language: Literal["en", "zh-CN", "zh-TW"] = "zh-TW"
+    focuses: list[Literal["evidence", "skills", "materials"]] = Field(
+        default_factory=lambda: ["evidence", "skills", "materials"], max_length=3
+    )
 
 
 class ResearchSource(BaseModel):
@@ -194,12 +226,16 @@ class ResearchSource(BaseModel):
 class ResearchPlanRead(BaseModel):
     id: int
     job_id: int
+    starter_plan_id: int | None = None
+    starter_plan_interest: str | None = None
+    starter_plan_headline: str | None = None
     profile_summary: str
     gaps: list[str]
     method: list[str]
     sources: list[ResearchSource]
     searched_at: datetime
     used_fallback: bool = False
+    focuses: list[Literal["evidence", "skills", "materials"]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)

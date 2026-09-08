@@ -69,7 +69,8 @@ def calendar_filename(item: TrackedApplication) -> str:
 
 
 def build_reminders(
-    items: list[TrackedApplication], *, today: date | None = None, days: int = 14
+    items: list[TrackedApplication], *, today: date | None = None, days: int = 14,
+    from_date: date | None = None, to_date: date | None = None,
 ) -> list[dict]:
     """Return actionable overdue and near-term dates in attention order."""
     today = today or date.today()
@@ -84,7 +85,14 @@ def build_reminders(
             ("follow_up", item.follow_up_at),
             ("interview", item.interview_date),
         ):
-            if due is None or due > horizon:
+            if due is None:
+                continue
+            if from_date is not None or to_date is not None:
+                if from_date is not None and due < from_date:
+                    continue
+                if to_date is not None and due > to_date:
+                    continue
+            elif due > horizon:
                 continue
             state = "overdue" if due < today else "today" if due == today else "upcoming"
             reminders.append(

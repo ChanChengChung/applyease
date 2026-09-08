@@ -8,9 +8,47 @@ Experience Bank draft can exist.
 
 from __future__ import annotations
 
+import re
+
 from app.ai.providers import ProviderError, llm
 from app.config import settings
 from app.services.resource_service import recommend_resources
+from app.services.resource_web_search_service import search_and_persist_resources
+
+
+TRADITIONAL_CHARACTERS = set(
+    "學習計畫專實務經歷開發軟體導覽與這個為國門從們會說對還現場電腦網頁點擊選擇確認關聯單業進階應職稱類別問題內線時間後優補強語讀寫輸產變動見長標準資簡轉錄參議證據萬舊來兩無將讓風雲氣東邊遠過連適當靜啟閉談論觀視聽記詞張項種樣構織統設編質釋調測試驗際領域啟閉規則準備選擇替換刪除顯示隱藏變化內容編輯版本歸屬戶帳號登錄碼誠值減換續週復兒級繁體"
+)
+SIMPLIFIED_CHARACTERS = set(
+    "学习计划专实务经历开发软体导览与这个为国门从们会说对还现场电脑网页点击选择确认关联单业进阶应职称类别问题内线时间后优补强语读写输产变动见长标准资简转录参议证据万旧来两无将让风云气东边远过连适当静启闭谈论观视听记词张项种样构织统设编质释调测测试际领域启闭规则准备选择替换删除显示隐藏变化内容编辑版本归属户账号登录码诚值减换续周复儿级繁体"
+)
+
+
+def detect_plan_language(value: str) -> str:
+    """Choose starter-plan output language from the student's own intent.
+
+    This is intentionally independent of the browser locale.  Chinese input
+    with Traditional markers uses ``zh-TW``; other CJK input uses ``zh-CN``;
+    input without CJK characters uses English.
+    """
+    text = str(value or "").strip()
+    if not re.search(r"[\u3400-\u9fff]", text):
+        return "en"
+    traditional = sum(character in TRADITIONAL_CHARACTERS for character in text)
+    simplified = sum(character in SIMPLIFIED_CHARACTERS for character in text)
+    return "zh-TW" if traditional > simplified else "zh-CN"
+
+
+def _plan_output_matches_language(plan: dict, language: str) -> bool:
+    """Reject provider output that visibly ignores the requested language."""
+    text = " ".join(
+        [str(plan.get("headline", "")), str(plan.get("first_action", ""))]
+        + [str(item) for item in plan.get("milestones", [])]
+    )
+    has_cjk = bool(re.search(r"[\u3400-\u9fff]", text))
+    if language == "en":
+        return not has_cjk
+    return has_cjk
 
 PROFILES = {
     "quant": {
@@ -65,6 +103,19 @@ PROFILES = {
             "zh-TW": "選一個入門競賽或資料集，並定義一個你可以重現的 baseline。",
         },
     },
+    "other": {
+        "skills": [],
+        "headline": {
+            "en": "Explore your direction through one small, source-backed piece of work.",
+            "zh-CN": "用一个有来源支撑的小成果，逐步探索你的方向。",
+            "zh-TW": "用一個有來源支撐的小成果，逐步探索你的方向。",
+        },
+        "first": {
+            "en": "Choose one beginner-friendly question in your field and write down what you want to find out before studying.",
+            "zh-CN": "在你的领域选一个适合初学者的问题，先写下你想弄明白什么，再开始学习。",
+            "zh-TW": "在你的領域選一個適合初學者的問題，先寫下你想弄明白什麼，再開始學習。",
+        },
+    },
 }
 
 
@@ -81,31 +132,50 @@ def _keyword_focus(interest: str) -> str:
         word in value for word in ("software", "web", "backend", "frontend", "开发", "開發", "程式")
     ):
         return "software"
-    return "ai"
+    # Unknown or non-technical interests must not be silently routed to AI.
+    return "other"
 
 
-def _ai_focus(interest: str) -> tuple[str, bool]:
-    """Use the configured local/cloud model only for bounded intent routing."""
+def _ai_focus(interest: str) -> tuple[str, bool, dict]:
+    """Extract an open-ended domain while retaining legacy focus labels."""
     fallback = _keyword_focus(interest)
     if not settings.ai_job_analysis_enabled:
-        return fallback, True
+        return fallback, True, {"domain": interest, "subdomains": [], "search_terms": [interest]}
     try:
         result = llm.generate_json(
-            "Classify this university student's career interest into exactly one allowed focus. "
-            "Do not give advice. Allowed values: ai, quant, software, business.\n"
+            "Extract this university student's career exploration intent. Do not give advice and "
+            "do not force a technical category. Use focus=ai, quant, software, business only "
+            "when clearly applicable; otherwise use focus=other. Preserve the user's subject "
+            "(for example mathematics, law, psychology, design, education, media, biology, "
+            "languages or public policy) in domain. Return 2-8 search terms that can retrieve "
+            "beginner learning resources for that subject.\n"
             f"Interest: {interest}",
             {
                 "type": "object",
-                "properties": {"focus": {"type": "string", "enum": list(PROFILES)}},
-                "required": ["focus"],
+                "properties": {
+                    "focus": {"type": "string", "enum": [*PROFILES]},
+                    "domain": {"type": "string"},
+                    "subdomains": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
+                    "search_terms": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 8},
+                },
+                "required": ["focus", "domain", "search_terms"],
             },
             feature="starter_plan_routing",
             prompt_version="starter-plan-v1",
         )
         focus = result.get("focus")
-        return (focus, False) if focus in PROFILES else (fallback, True)
+        if focus not in PROFILES:
+            focus = fallback
+        routing = {
+            "domain": str(result.get("domain") or interest).strip()[:300],
+            "subdomains": [str(item).strip() for item in result.get("subdomains", []) if str(item).strip()][:4],
+            "search_terms": [str(item).strip() for item in result.get("search_terms", []) if str(item).strip()][:8],
+        }
+        if not routing["search_terms"]:
+            routing["search_terms"] = [interest]
+        return focus, False, routing
     except ProviderError:
-        return fallback, True
+        return fallback, True, {"domain": interest, "subdomains": [], "search_terms": [interest]}
 
 
 def _ai_tailor_plan(
@@ -123,10 +193,13 @@ def _ai_tailor_plan(
         result = llm.generate_json(
             "Act as a supportive university career mentor. Tailor the starting plan to every "
             "answer in CONTEXT. Return practical, small actions within the stated time budget. "
+            "Keep the user's subject and career domain central; do not assume Python, coding, "
+            "data science, finance, or any other technical path unless the user requested it. "
             "Do not claim the student has completed anything and do not invent awards, projects, "
             "skills, deadlines, or links. Use language code "
             f"{language}.\nCONTEXT:\n{context}\nSAFE DEFAULT PLAN:\n"
-            f"Headline: {headline}\nFirst action: {first_action}\nMilestones: {milestones}",
+            f"Generic safe defaults (use only if they fit the subject):\nHeadline: {headline}\n"
+            f"First action: {first_action}\nMilestones: {milestones}",
             {
                 "type": "object",
                 "properties": {
@@ -153,11 +226,14 @@ def _ai_tailor_plan(
             )
         ):
             return fallback, True
-        return {
+        tailored = {
             "headline": result["headline"].strip(),
             "first_action": result["first_action"].strip(),
             "milestones": [item.strip() for item in result["milestones"]],
-        }, False
+        }
+        if not _plan_output_matches_language(tailored, language):
+            return fallback, True
+        return tailored, False
     except ProviderError:
         return fallback, True
 
@@ -166,6 +242,7 @@ def build_starter_plan(
     interest: str,
     resources: list,
     *,
+    db=None,
     max_total_hours: int,
     language: str,
     goal: str = "explore",
@@ -188,19 +265,44 @@ def build_starter_plan(
         )
         if part.strip(" ;")
     )
-    focus, used_fallback = _ai_focus(context)
-    profile = PROFILES[focus]
+    focus, used_fallback, routing = _ai_focus(context)
+    profile = PROFILES.get(focus, PROFILES["other"])
+    retrieval_query = " ".join(
+        [
+            interest,
+            routing.get("domain", ""),
+            " ".join(routing.get("subdomains", [])),
+            " ".join(routing.get("search_terms", [])),
+            "beginner learning resources course project",
+        ]
+    ).strip()
     recommendation_goal = "project" if goal in {"portfolio", "competition"} else "skills"
-    recommended = recommend_resources(
-        profile["skills"],
-        resources,
-        level="beginner",
-        max_total_hours=max_total_hours,
-        free_only=True,
-        limit=4,
-        goal=recommendation_goal,
-        language=language,
+    # Open-web retrieval is the primary path. It is intentionally independent
+    # of the old four-profile skill vocabulary, so any discipline can produce
+    # relevant resources. The curated catalogue remains a transparent fallback
+    # for offline demos or exhausted search providers.
+    recommended, web_fallback = (
+        search_and_persist_resources(
+            db,
+            retrieval_query,
+            max_total_hours=max_total_hours,
+            limit=4,
+        )
+        if db is not None
+        else ([], True)
     )
+    if web_fallback:
+        recommended = recommend_resources(
+            profile["skills"],
+            resources,
+            level="beginner",
+            max_total_hours=max_total_hours,
+            free_only=True,
+            limit=4,
+            goal=recommendation_goal,
+            language=language,
+        )
+    used_fallback = used_fallback or web_fallback
     # Competition preference promotes concrete public challenge links already
     # present in the curated catalogue; it never fabricates a live deadline.
     formats = set(preferred_formats or [])
@@ -218,18 +320,21 @@ def build_starter_plan(
             "business": "Business problem solver",
             "software": "Software builder",
             "ai": "AI project starter",
+            "other": "Explore your direction",
         },
         "zh-CN": {
             "quant": "量化研究起步",
             "business": "商业问题解决起步",
             "software": "软件开发起步",
             "ai": "AI 项目起步",
+            "other": "探索你的方向",
         },
         "zh-TW": {
             "quant": "量化研究起步",
             "business": "商業問題解決起步",
             "software": "軟體開發起步",
             "ai": "AI 專案起步",
+            "other": "探索你的方向",
         },
     }
     milestone = {
@@ -253,24 +358,38 @@ def build_starter_plan(
     default_milestones = milestone[lang][:-1] + (
         [
             {
-                "en": "Start with one reproducible baseline, not a polished claim.",
-                "zh-CN": "先完成一个可复现的 baseline，而不是包装成成果。",
-                "zh-TW": "先完成一個可重現的 baseline，而不是包裝成成果。",
+                    "en": "Start with one small, repeatable observation or exercise, not a polished claim.",
+                    "zh-CN": "先完成一个可重复的小观察或练习，而不是包装成成果。",
+                    "zh-TW": "先完成一個可重複的小觀察或練習，而不是包裝成成果。",
             }[lang]
         ]
         if experience_level == "none"
         else []
     ) + [milestone[lang][-1]]
     tailored, tailoring_fallback = _ai_tailor_plan(
-        context=f"{context}\nTotal time budget: {max_total_hours} hours",
+        context=(
+            f"{context}\nDetected subject domain: {routing.get('domain', interest)}\n"
+            f"Suggested exploration terms: {', '.join(routing.get('search_terms', []))}\n"
+            f"Total time budget: {max_total_hours} hours"
+        ),
         language=lang,
         headline=profile["headline"][lang],
         first_action=profile["first"][lang],
         milestones=default_milestones,
     )
+    # Keep the three learning phases explicit so edits can add/remove a step
+    # inside a selected phase without re-bucketing existing steps on reload.
+    first_cut = max(1, (len(tailored["milestones"]) + 2) // 3)
+    second_cut = max(first_cut + 1, (len(tailored["milestones"]) * 2 + 2) // 3)
+    milestone_sections = {
+        "foundation": tailored["milestones"][:first_cut],
+        "practice": tailored["milestones"][first_cut:second_cut],
+        "reflection": tailored["milestones"][second_cut:],
+    }
     return {
         "focus": focus,
         **tailored,
+        "milestone_sections": milestone_sections,
         "resources": recommended,
         "used_fallback": used_fallback or tailoring_fallback,
         "label": labels[lang][focus],

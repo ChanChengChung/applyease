@@ -59,9 +59,15 @@ export async function getStarterPlan(payload: {
 export function getSavedStarterPlan(): Promise<StarterPlan> {
   return request<StarterPlan>("/resources/starter-plans");
 }
+export function listStarterPlans(): Promise<StarterPlan[]> {
+  return request<StarterPlan[]>("/resources/starter-plans/list");
+}
+export function deleteStarterPlan(id: number): Promise<void> {
+  return request(`/resources/starter-plans/${id}`, { method: "DELETE" });
+}
 export function updateStarterPlan(
   id: number,
-  payload: Pick<StarterPlan, "focus" | "headline" | "first_action" | "milestones">,
+  payload: Pick<StarterPlan, "focus" | "headline" | "first_action" | "milestones" | "milestone_sections">,
 ): Promise<StarterPlan> {
   return request<StarterPlan>(`/resources/starter-plans/${id}`, {
     method: "PATCH",
@@ -87,11 +93,13 @@ export function refineStarterPlan(
 }
 export async function getResearchPlan(payload: {
   job_id: number;
+  starter_plan_id?: number | null;
   weekly_hours: number;
   weeks: number;
   goal: "skills" | "project" | "interview";
   learning_style?: "hands_on" | "guided" | "intensive";
   language: "en" | "zh-CN" | "zh-TW";
+  focuses?: Array<"evidence" | "skills" | "materials">;
 }): Promise<ResearchPlan> {
   return request<ResearchPlan>("/resources/research-plan", {
     method: "POST",
@@ -99,8 +107,18 @@ export async function getResearchPlan(payload: {
     body: JSON.stringify(payload),
   });
 }
-export function getSavedResearchPlan(jobId: number): Promise<ResearchPlan> {
-  return request<ResearchPlan>(`/resources/research-plans?job_id=${jobId}`);
+export function listResearchPlans(jobId: number): Promise<ResearchPlan[]> {
+  return request<ResearchPlan[]>(
+    `/resources/research-plans/history?job_id=${encodeURIComponent(String(jobId))}`,
+  );
+}
+export function getSavedResearchPlan(
+  jobId: number,
+  starterPlanId?: number | null,
+): Promise<ResearchPlan> {
+  const params = new URLSearchParams({ job_id: String(jobId) });
+  if (starterPlanId) params.set("starter_plan_id", String(starterPlanId));
+  return request<ResearchPlan>(`/resources/research-plans?${params.toString()}`);
 }
 export function updateResearchPlan(
   id: number,
@@ -137,26 +155,5 @@ export async function createExperienceDraft(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reflection }),
-  });
-}
-
-export async function checkResourceHealth(
-  resourceId: number,
-): Promise<LearningResource> {
-  return request<LearningResource>(`/resources/${resourceId}/health-check`, {
-    method: "POST",
-  });
-}
-export type ResourceFeedbackCategory =
-  "broken_link" | "outdated_content" | "other";
-export async function submitResourceFeedback(
-  resourceId: number,
-  category: ResourceFeedbackCategory,
-  message: string,
-): Promise<{ id: number; message: string }> {
-  return request(`/resources/${resourceId}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ category, message }),
   });
 }

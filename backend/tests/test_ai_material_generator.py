@@ -158,6 +158,34 @@ def test_ai_cover_letter_prompt_requires_a_grounded_letter_structure(monkeypatch
     assert "Do not use placeholders, headings, bullet points" in captured["prompt"]
 
 
+def test_ai_material_repairs_provider_citations_when_grounded_text_is_present(monkeypatch):
+    monkeypatch.setattr(
+        "app.ai.material_generator.llm.generate_json",
+        lambda *_: {
+            "text": (
+                "Dear Hiring Team,\n\n"
+                "I am applying for the Data Intern role. My Python Project experience at CUHK "
+                "included a Python data pipeline.\n\n"
+                "Sincerely,\nChen Zhengzhong"
+            ),
+            # DashScope sometimes returns IDs as strings and paraphrases the
+            # evidence_quote envelope even when the generated prose is grounded.
+            "citations": [
+                {
+                    "experience_id": "40",
+                    "claim": "a claim not copied verbatim",
+                    "evidence_quote": "pipeline work",
+                }
+            ],
+        },
+    )
+
+    material = generate_cover_letter_ai(make_job(), [make_experience()])
+
+    assert material.generation_method == "ai"
+    assert material.sources[0].experience_id == 40
+
+
 def test_ai_cover_letter_rejects_a_cv_style_bullet_dump(monkeypatch):
     monkeypatch.setattr(
         "app.ai.material_generator.llm.generate_json",

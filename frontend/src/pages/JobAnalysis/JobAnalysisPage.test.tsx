@@ -98,6 +98,7 @@ describe("JobAnalysisPage", () => {
       ],
     });
     renderWithProviders(<JobAnalysisPage />);
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
 
     await user.type(screen.getByLabelText("其他已知要求"), job.description);
     await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
@@ -133,7 +134,10 @@ describe("JobAnalysisPage", () => {
 
     expect(screen.getByRole("button", { name: "导入中..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "从截图导入" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /手动建立职位简介/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(screen.queryByRole("button", { name: "识别中..." })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "分析中..." })).not.toBeInTheDocument();
 
@@ -161,6 +165,7 @@ describe("JobAnalysisPage", () => {
     renderWithProviders(
       <JobAnalysisPage onOpenResourcePlan={onOpenResourcePlan} />,
     );
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
 
     await user.type(screen.getByLabelText("职位名称"), "AI Intern");
 
@@ -180,7 +185,7 @@ describe("JobAnalysisPage", () => {
       additional_details: job.description,
     });
 
-    expect(await screen.findByText("50")).toBeInTheDocument();
+    expect(await screen.findByLabelText("匹配分数 中")).toBeInTheDocument();
 
     expect(
       screen
@@ -223,6 +228,7 @@ describe("JobAnalysisPage", () => {
   it("requires at least one manual role fact before analysis", async () => {
     const user = userEvent.setup();
     renderWithProviders(<JobAnalysisPage />);
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
 
     expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeDisabled();
     await user.type(screen.getByLabelText("技能要求"), "Python");
@@ -233,12 +239,13 @@ describe("JobAnalysisPage", () => {
   it("restores an unsaved analysis after the workspace is remounted", async () => {
     const user = userEvent.setup();
     const firstRender = renderWithProviders(<JobAnalysisPage />);
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
 
     await user.type(screen.getByLabelText("职位名称"), "AI Intern");
     await user.type(screen.getByLabelText("公司"), "Example");
     await user.type(screen.getByLabelText("其他已知要求"), job.description);
     await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
-    expect(await screen.findByText("50")).toBeInTheDocument();
+    expect(await screen.findByLabelText("匹配分数 中")).toBeInTheDocument();
     await waitFor(() =>
       expect(window.sessionStorage.getItem("applyease.job-analysis-draft.v1")).toContain("AI Intern"),
     );
@@ -246,7 +253,7 @@ describe("JobAnalysisPage", () => {
     firstRender.unmount();
     renderWithProviders(<JobAnalysisPage />);
 
-    expect(await screen.findByText("50")).toBeInTheDocument();
+    expect(await screen.findByLabelText("匹配分数 中")).toBeInTheDocument();
     expect(screen.getByDisplayValue("AI Intern")).toBeInTheDocument();
   });
 
@@ -254,6 +261,7 @@ describe("JobAnalysisPage", () => {
     const user = userEvent.setup();
     api.previewManualJobAnalysis.mockRejectedValue(new Error("AI 服务超时"));
     renderWithProviders(<JobAnalysisPage />);
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
 
     await user.type(screen.getByLabelText("其他已知要求"), job.description);
 
@@ -262,5 +270,20 @@ describe("JobAnalysisPage", () => {
     expect(await screen.findByText("AI 服务超时")).toHaveClass("error");
 
     expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeEnabled();
+  });
+
+  it("keeps the two input paths isolated while switching between them", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<JobAnalysisPage />);
+
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
+    await user.type(screen.getByLabelText("职位名称"), "Manual role");
+    await user.click(screen.getByRole("button", { name: /导入公开职位/ }));
+
+    expect(screen.getByLabelText("公开 HTTPS 职位链接")).toHaveValue("");
+    expect(screen.queryByDisplayValue("Manual role")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
+    expect(screen.getByDisplayValue("Manual role")).toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ import httpx
 from app.ai.providers import ProviderError, RateLimitExceeded
 from app.config import settings
 from app.models.experience import Experience
+from app.services.role_classification_service import classify_role
 
 
 SEARCH_SCHEMA = {
@@ -127,6 +128,12 @@ _BOCHA_WEB_SEARCH_URL = "https://api.bochaai.com/v1/web-search"
 _LEVER_PUBLIC_FEEDS = {
     "ekimetrics": "Ekimetrics",
     "neon": "Neon",
+    "ramp": "Ramp",
+    "retool": "Retool",
+    "benchling": "Benchling",
+    "affirm": "Affirm",
+    "samsara": "Samsara",
+    "rippling": "Rippling",
 }
 
 # Greenhouse's public Job Board API is employer-owned, needs no API key and
@@ -147,6 +154,19 @@ _GREENHOUSE_PUBLIC_BOARDS = {
     "coinbase": "Coinbase",
     "ripple": "Ripple",
     "block": "Block",
+    "airtable": "Airtable",
+    "asana": "Asana",
+    "brex": "Brex",
+    "canva": "Canva",
+    "duolingo": "Duolingo",
+    "gusto": "Gusto",
+    "hubspot": "HubSpot",
+    "notion": "Notion",
+    "okta": "Okta",
+    "reddit": "Reddit",
+    "robinhood": "Robinhood",
+    "twilio": "Twilio",
+    "uber": "Uber",
 }
 
 _greenhouse_board_cache: dict[str, tuple[float, list[dict]]] = {}
@@ -294,7 +314,7 @@ def _localized_role_reason(
 
 
 def _normalise_location(value: str) -> str:
-    value = value.casefold().strip()
+    value = re.sub(r"\s+", " ", value.casefold().strip())
     aliases = {
         "hong kong": "hong kong",
         "hkg": "hong kong",
@@ -306,17 +326,34 @@ def _normalise_location(value: str) -> str:
     return aliases.get(value, value)
 
 
+def _location_parts(value: str) -> set[str]:
+    """Return canonical location fragments from ATS multi-location strings."""
+    parts = re.split(r"[,;/|·•]+|\s+-\s+", str(value))
+    result: set[str] = set()
+    for part in parts:
+        normalised = _normalise_location(part)
+        if normalised:
+            result.add(normalised)
+    return result
+
+
 def _location_rank(posting_location: str, requested_location: str) -> int:
-    """Keep job type as the main signal, then rank exact locations above all.
+    """Keep exact requested locations above unknown and alternative cities.
 
     A role with no published location is kept as a lower-confidence result;
     a known mismatched city must never leap ahead of an exact requested city.
     """
-    wanted = _normalise_location(requested_location)
-    actual = _normalise_location(posting_location)
+    wanted = _location_parts(requested_location)
+    actual = _location_parts(posting_location)
     if not wanted:
         return 1
-    if wanted and (wanted in actual or actual in wanted):
+    if actual and any(
+        part == requested
+        or part in requested
+        or requested in part
+        for requested in wanted
+        for part in actual
+    ):
         return 2
     if not actual:
         return 1
@@ -479,26 +516,105 @@ def _dynamic_next_step(
     return f"Review the official requirements for “{title}”, then prepare one explainable example around {subject}."
 
 
-def _rank_opportunities(rows: list[dict], *, career_goal: str, location: str) -> list[dict]:
-    goal_tokens = _career_search_terms(career_goal, [])
+def _term_in_text(text: str, term: str) -> bool:
+    """Match a search term as a word/phrase, never as an arbitrary substring."""
+    value = " ".join(str(term).casefold().split())
+    if not value:
+        return False
+    escaped = re.escape(value).replace(r"\ ", r"\s+")
+    return bool(re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text.casefold()))
 
-    def rank(row: dict) -> tuple[int, int, int]:
+
+def _work_preference_rank(row: dict, preference: str) -> int:
+    if preference == "any":
+        return 1
+    text = " ".join(
+        str(row.get(key, ""))
+        for key in ("title", "location", "employment_type", "description", "_role_text")
+    ).casefold()
+    markers = {
+        "remote": ("remote", "work from home", "wfh", "distributed"),
+        "hybrid": ("hybrid",),
+        "onsite": ("onsite", "on-site", "in office", "in-office"),
+    }
+    if any(marker in text for marker in markers.get(preference, ())):
+        return 2
+    if not any(any(marker in text for marker in values) for values in markers.values()):
+        return 1
+    return 0
+
+
+def _rank_opportunities(
+    rows: list[dict], *, career_goal: str, location: str, work_preference: str = "any"
+) -> list[dict]:
+    """Rank verified roles with a strict location-first, relevance-second policy.
+
+    A requested city is now a selection boundary: when exact-city results exist,
+    other cities are not mixed into the returned page.  If no exact result is
+    available, roles without a published location are preferred, then verified
+    alternatives are used as a transparent fallback.  Within the location
+    bucket, title matches carry substantially more weight than metadata and a
+    greedy pass keeps one employer from filling every result slot. The same
+    policy is applied to remote/hybrid/onsite when the posting exposes it.
+    """
+    goal_terms = _career_search_terms(career_goal, [])
+
+    def rank(row: dict) -> tuple[int, int, int, int, str, str]:
         title = str(row.get("title", "")).casefold()
-        # The user's requested kind of work is the primary signal, their
-        # selected location is second, and student-role suitability is third.
-        # This is intentionally a preference rather than a hard location gate.
-        role_rank = 2 if re.search(r"\b(intern|internship|graduate)\b", title) else 1
-        overlap = sum(token in title for token in goal_tokens)
-        return overlap, _location_rank(str(row.get("location", "")), location), role_rank
+        company = str(row.get("company", "")).casefold()
+        metadata = " ".join(
+            [
+                company,
+                str(row.get("employment_type", "")),
+                str(row.get("location", "")),
+            ]
+        ).casefold()
+        title_hits = sum(1 for term in goal_terms if _term_in_text(title, term))
+        metadata_hits = sum(1 for term in goal_terms if _term_in_text(metadata, term))
+        student_rank = 2 if re.search(r"\b(intern|internship|graduate|co-op)\b", title) else 1
+        # Exact city is intentionally worth more than several weak keyword
+        # matches. The title still dominates company/type metadata inside the
+        # same location bucket.
+        location_rank = _location_rank(str(row.get("location", "")), location)
+        relevance = title_hits * 20 + metadata_hits * 2
+        preference_rank = _work_preference_rank(row, work_preference)
+        return location_rank, preference_rank, relevance, student_rank, company, title
 
-    # Location is a ranking preference, not a hidden hard filter. If a city
-    # has no currently open role, verified alternatives are still useful and
-    # must remain visible rather than making the search appear broken.
-    return sorted(rows, key=rank, reverse=True)
+    ranked = sorted(rows, key=rank, reverse=True)
+    if not ranked:
+        return []
+
+    exact = [row for row in ranked if _location_rank(str(row.get("location", "")), location) == 2]
+    unknown = [row for row in ranked if _location_rank(str(row.get("location", "")), location) == 1]
+    # Do not mix known wrong-city postings into a page that already has exact
+    # matches (or postings with no published location).
+    location_pool = exact or unknown or ranked
+    if work_preference != "any":
+        preferred = [row for row in location_pool if _work_preference_rank(row, work_preference) == 2]
+        preference_unknown = [row for row in location_pool if _work_preference_rank(row, work_preference) == 1]
+        pool = preferred or preference_unknown or location_pool
+    else:
+        pool = location_pool
+    selected: list[dict] = []
+    companies: set[str] = set()
+    for row in pool:
+        company = " ".join(str(row.get("company", "")).casefold().split())
+        if company in companies:
+            continue
+        selected.append(row)
+        companies.add(company)
+    # If the requested page is small and the market has fewer distinct
+    # employers, fill remaining slots with the next best roles.
+    if len(selected) < len(pool):
+        for row in pool:
+            if row not in selected:
+                selected.append(row)
+    return selected
 
 
 def _lever_public_feed_search(
-    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
+    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int,
+    work_preference: str = "any", timing: str = ""
 ) -> dict:
     """Search reviewed official Lever feeds without an AI or search-engine key."""
     skills = [skill.casefold() for item in evidence for skill in item.get("skills", [])]
@@ -562,10 +678,14 @@ def _lever_public_feed_search(
                     },
                 )
             )
-    # A relevant internship remains the first gate; within that set, exact
-    # requested locations always come before other cities.
+    # Keep a broad pre-detail shortlist. Final ranking applies the strict
+    # location policy and employer diversification after descriptions exist.
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
     evidence_names = [str(item["title"]) for item in evidence[:3] if item.get("title")]
+    postings = _rank_opportunities(
+        [item[2] for item in candidates], career_goal=career_goal, location=location,
+        work_preference=work_preference
+    )[: max(limit * 3, 12)]
     results = [
         {
             **posting,
@@ -588,7 +708,7 @@ def _lever_public_feed_search(
             ),
             "source_search_mode": "official_ats",
         }
-        for _, _, posting in candidates[:limit]
+        for posting in postings[:limit]
     ]
     for result in results:
         result.pop("_role_text", None)
@@ -664,7 +784,8 @@ def _fetch_greenhouse_public_board(token: str) -> list[dict] | None:
 
 
 def _greenhouse_public_board_search(
-    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
+    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int,
+    work_preference: str = "any", timing: str = ""
 ) -> dict:
     """Search a reviewed set of high-volume official Greenhouse boards.
 
@@ -731,7 +852,10 @@ def _greenhouse_public_board_search(
             )
 
     candidates.sort(key=lambda row: (row[0], row[1]), reverse=True)
-    shortlist = [row[2] for row in candidates[: max(limit * 3, 12)]]
+    shortlist = _rank_opportunities(
+        [row[2] for row in candidates], career_goal=career_goal, location=location,
+        work_preference=work_preference
+    )[: max(limit * 6, 30)]
 
     def fetch_detail(posting: dict) -> tuple[dict, str]:
         try:
@@ -784,7 +908,8 @@ def _greenhouse_public_board_search(
             )
 
     results = _dedupe_and_rank(
-        detailed, career_goal=career_goal, location=location, limit=limit
+        detailed, career_goal=career_goal, location=location, limit=limit,
+        work_preference=work_preference
     )
     return {
         "opportunities": results,
@@ -795,7 +920,8 @@ def _greenhouse_public_board_search(
 
 
 def _direct_ats_search(
-    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
+    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int,
+    work_preference: str = "any", timing: str = ""
 ) -> dict:
     """Keyless search fallback over direct employer ATS pages.
 
@@ -809,15 +935,19 @@ def _direct_ats_search(
         location=location,
         language=language,
         limit=max(limit, 8),
+        work_preference=work_preference,
+        timing=timing,
     )
     lever_result = _lever_public_feed_search(
-        evidence, career_goal=career_goal, location=location, language=language, limit=limit
+        evidence, career_goal=career_goal, location=location, language=language, limit=limit,
+        work_preference=work_preference, timing=timing
     )
     verified = _dedupe_and_rank(
         [*greenhouse_result["opportunities"], *lever_result["opportunities"]],
         career_goal=career_goal,
         location=location,
         limit=limit,
+        work_preference=work_preference,
     )
     if verified:
         verified_urls = {str(row.get("source_url", "")) for row in verified}
@@ -839,7 +969,16 @@ def _direct_ats_search(
 
     skills = " ".join(skill for item in evidence for skill in item.get("skills", [])).strip()
     query_terms = " ".join(
-        value for value in [career_goal, skills[:180], location, "internship"] if value
+        value
+        for value in [
+            career_goal,
+            skills[:180],
+            location,
+            timing.strip()[:80],
+            work_preference if work_preference != "any" else "",
+            "internship",
+        ]
+        if value
     )
     query = (
         f"{query_terms} (site:boards.greenhouse.io OR site:jobs.lever.co OR "
@@ -930,7 +1069,10 @@ def _direct_ats_search(
         )
         if len(results) >= limit:
             break
-    results = _rank_opportunities(results, career_goal=career_goal, location=location)[:limit]
+    results = _rank_opportunities(
+        results, career_goal=career_goal, location=location,
+        work_preference=work_preference
+    )[:limit]
     return {
         "opportunities": results,
         "sources": sources[:8],
@@ -940,7 +1082,8 @@ def _direct_ats_search(
 
 
 def _brave_ats_search(
-    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
+    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int,
+    work_preference: str = "any", timing: str = ""
 ) -> dict:
     """Search current official ATS pages using Brave's independent web index.
 
@@ -958,7 +1101,17 @@ def _brave_ats_search(
     terms = sorted(_career_search_terms(career_goal, evidence))[:8]
     query_terms = " ".join(terms) or "student early career"
     location_terms = location.strip()[:120]
-    query_tail = " ".join(value for value in [query_terms, location_terms, "internship"] if value)
+    query_tail = " ".join(
+        value
+        for value in [
+            query_terms,
+            location_terms,
+            timing.strip()[:80],
+            work_preference if work_preference != "any" else "",
+            "internship",
+        ]
+        if value
+    )
     hosts = ("boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com")
     headers = {
         "Accept": "application/json",
@@ -1025,7 +1178,10 @@ def _brave_ats_search(
                 "source_search_mode": "ai",
             }
         )
-    results = _dedupe_and_rank(candidates, career_goal=career_goal, location=location, limit=limit)
+    results = _dedupe_and_rank(
+        candidates, career_goal=career_goal, location=location, limit=limit,
+        work_preference=work_preference
+    )
     return {
         "opportunities": results,
         "sources": [{"title": row["source_title"], "url": row["source_url"]} for row in results],
@@ -1035,7 +1191,8 @@ def _brave_ats_search(
 
 
 def _bocha_ats_search(
-    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int
+    evidence: list[dict], *, career_goal: str, location: str, language: str, limit: int,
+    work_preference: str = "any", timing: str = ""
 ) -> dict:
     """Search official ATS pages with Bocha, the preferred domestic provider."""
     token = settings.bocha_search_api_key.strip()
@@ -1045,7 +1202,15 @@ def _bocha_ats_search(
     terms = sorted(_career_search_terms(career_goal, evidence))[:8]
     query_terms = " ".join(terms) or "student early career"
     query_tail = " ".join(
-        value for value in [query_terms, location.strip()[:120], "internship"] if value
+        value
+        for value in [
+            query_terms,
+            location.strip()[:120],
+            timing.strip()[:80],
+            work_preference if work_preference != "any" else "",
+            "internship",
+        ]
+        if value
     )
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1121,7 +1286,10 @@ def _bocha_ats_search(
                 "source_search_mode": "ai",
             }
         )
-    results = _dedupe_and_rank(candidates, career_goal=career_goal, location=location, limit=limit)
+    results = _dedupe_and_rank(
+        candidates, career_goal=career_goal, location=location, limit=limit,
+        work_preference=work_preference
+    )
     return {
         "opportunities": results,
         "sources": [{"title": row["source_title"], "url": row["source_url"]} for row in results],
@@ -1149,7 +1317,8 @@ def discover_opportunities(
     unavailable_reason = ""
     if "official_ats" in search_modes:
         ats = _direct_ats_search(
-            evidence, career_goal=career_goal, location=location, language=language, limit=limit
+            evidence, career_goal=career_goal, location=location, language=language, limit=limit,
+            work_preference=work_preference, timing=timing
         )
         results.extend(ats["opportunities"])
         sources.extend(ats["sources"])
@@ -1162,7 +1331,10 @@ def discover_opportunities(
             unavailable_reason = str(ats["unavailable_reason"])
 
     if "ai" not in search_modes:
-        deduped = _dedupe_and_rank(results, career_goal=career_goal, location=location, limit=limit)
+        deduped = _dedupe_and_rank(
+            results, career_goal=career_goal, location=location, limit=limit,
+            work_preference=work_preference
+        )
         return {
             "opportunities": deduped,
             "sources": _dedupe_sources(sources),
@@ -1177,6 +1349,8 @@ def discover_opportunities(
             "location": location,
             "language": language,
             "limit": limit,
+            "work_preference": work_preference,
+            "timing": timing,
         }
         if settings.bocha_search_api_key.strip():
             try:
@@ -1213,7 +1387,8 @@ def discover_opportunities(
         )
         return {
             "opportunities": _dedupe_and_rank(
-                results, career_goal=career_goal, location=location, limit=limit
+                results, career_goal=career_goal, location=location, limit=limit,
+                work_preference=work_preference
             ),
             "sources": _dedupe_sources(sources),
             "used_fallback": used_fallback,
@@ -1228,7 +1403,8 @@ def discover_opportunities(
         unavailable_reason = "provider_unavailable"
     return {
         "opportunities": _dedupe_and_rank(
-            results, career_goal=career_goal, location=location, limit=limit
+            results, career_goal=career_goal, location=location, limit=limit,
+            work_preference=work_preference
         ),
         "sources": _dedupe_sources(sources),
         "used_fallback": used_fallback,
@@ -1247,7 +1423,8 @@ def _dedupe_sources(sources: list[dict]) -> list[dict]:
 
 
 def _dedupe_and_rank(
-    rows: list[dict], *, career_goal: str, location: str, limit: int
+    rows: list[dict], *, career_goal: str, location: str, limit: int,
+    work_preference: str = "any"
 ) -> list[dict]:
     unique_by_role: dict[tuple[str, str], dict] = {}
     for row in rows:
@@ -1266,4 +1443,13 @@ def _dedupe_and_rank(
         ) > _location_rank(str(existing.get("location", "")), location):
             unique_by_role[key] = row
     unique = list(unique_by_role.values())
-    return _rank_opportunities(unique, career_goal=career_goal, location=location)[:limit]
+    ranked = _rank_opportunities(
+        unique, career_goal=career_goal, location=location,
+        work_preference=work_preference
+    )[:limit]
+    for row in ranked:
+        row["folder"] = classify_role(
+            str(row.get("title", "")), str(row.get("company", "")),
+            str(row.get("employment_type", "")), str(row.get("location", "")),
+        )
+    return ranked
