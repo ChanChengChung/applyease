@@ -106,10 +106,10 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
       target: "tracker" as PageId,
     },
     {
-      // The large number answers the user's first question: how many kinds of
-      // application material are ready. Saved iterations are supporting detail,
-      // not a pseudo-score.
-      value: summary.material_types.length,
+      // Show all saved material versions. Counting only distinct types (or
+      // only the latest role) misleadingly produces 0/1/2 even when the user
+      // already has a substantial material history.
+      value: summary.material_count,
       label: t("dashboard.generatedMaterialTypes"),
       detail: summary.latest_material_type
         ? t("dashboard.materialVersionDetail", {

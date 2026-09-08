@@ -143,7 +143,7 @@ const en: Dict = {
   "dashboard.latestMaterials": "Latest job materials",
   "dashboard.materialVersions": "Current-role material versions",
   "dashboard.latestMaterialVersion": "Latest: {type} · {n} versions",
-  "dashboard.generatedMaterialTypes": "Generated material types",
+  "dashboard.generatedMaterialTypes": "Generated materials",
   "dashboard.materialVersionDetail": "Latest: {type} · {n} saved version(s)",
   "dashboard.notGenerated": "Not generated yet",
   "dashboard.activeApps": "Active applications",

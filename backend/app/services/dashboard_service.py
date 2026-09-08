@@ -91,9 +91,14 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
 
     job = snapshot["latest_job"]
 
+    # `materials` is deliberately scoped to the newest job and is used only
+    # for that job's readiness. Dashboard totals must cover every saved
+    # material owned by the current user; otherwise adding a new target role
+    # makes a real collection of older resumes/letters appear as zero.
     materials = snapshot["materials"]
-
-    material_types = sorted({item.material_type for item in materials})
+    all_materials = snapshot.get("all_materials", materials)
+    latest_job_material_types = sorted({item.material_type for item in materials})
+    all_material_types = sorted({item.material_type for item in all_materials})
 
     questions = snapshot["questions"]
 
@@ -116,7 +121,7 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
         )
         candidate_materials = [
             item
-            for item in snapshot.get("all_materials", materials)
+            for item in all_materials
             if getattr(item, "job_id", candidate.id) == candidate.id
         ]
         candidate_app = next(
@@ -219,7 +224,7 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
     elif not job:
         current, action = "jobs", ("分析目标职位", "粘贴职位描述，找出匹配证据和技能缺口。", "jobs")
 
-    elif not EXPECTED_MATERIALS.issubset(material_types):
+    elif not EXPECTED_MATERIALS.issubset(latest_job_material_types):
         current, action = "builder", (
             "生成申请材料",
             "为最新职位生成 Resume 和 Cover Letter。",
@@ -287,9 +292,9 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
         "pending_experiences": len(pending),
         "job_total": len(jobs),
         "latest_job": {"id": job.id, "title": job.title, "company": job.company} if job else None,
-        "material_count": len(materials),
-        "material_types": material_types,
-        "latest_material_type": materials[0].material_type if materials else None,
+        "material_count": len(all_materials),
+        "material_types": all_material_types,
+        "latest_material_type": all_materials[0].material_type if all_materials else None,
         "application_id": snapshot["application"].id if snapshot["application"] else None,
         "questions_total": len(questions),
         "answers_ready": answered,

@@ -53,6 +53,29 @@ def test_dashboard_does_not_skip_remaining_unconfirmed_experiences():
     assert result["confirmed_experiences"] == 1
 
 
+def test_dashboard_material_total_includes_saved_versions_from_older_jobs():
+    latest_job = SimpleNamespace(id=8, title="New Role", company="New Co")
+    older_resume = SimpleNamespace(job_id=7, material_type="resume")
+    older_letter = SimpleNamespace(job_id=7, material_type="cover_letter")
+
+    result = build_dashboard_summary(
+        snapshot(
+            experiences=[SimpleNamespace(confirmed=True)],
+            jobs=[latest_job],
+            latest_job=latest_job,
+            materials=[],
+            all_materials=[older_letter, older_resume],
+        ),
+        date(2026, 8, 13),
+    )
+
+    assert result["material_count"] == 2
+    assert result["material_types"] == ["cover_letter", "resume"]
+    assert result["latest_material_type"] == "cover_letter"
+    # Older materials must not make the newest role look complete.
+    assert result["next_action"]["target"] == "builder"
+
+
 def test_complete_materials_advance_to_required_application_answers():
     job = SimpleNamespace(id=7, title="AI Intern", company="Polymer")
 

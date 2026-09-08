@@ -147,6 +147,23 @@ describe("DashboardPage", () => {
     expect(screen.getByText("SQL")).toBeInTheDocument();
   });
 
+  it("shows the number of saved material versions instead of distinct material types", async () => {
+    api.getDashboardSummary.mockResolvedValue({
+      ...summary,
+      material_count: 5,
+      material_types: ["cover_letter", "resume"],
+      latest_material_type: "resume",
+    });
+
+    renderWithProviders(<DashboardPage onNavigate={vi.fn()} />);
+
+    const materialAction = await screen.findByRole("button", {
+      name: "打开已生成材料",
+    });
+    expect(materialAction.closest("article")).toHaveTextContent("5");
+    expect(materialAction.closest("article")).not.toHaveTextContent(/^2$/);
+  });
+
   it("opens the Experience Bank when the dashboard start action is clicked", async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();

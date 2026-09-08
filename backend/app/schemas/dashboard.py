@@ -83,9 +83,9 @@ class DashboardSummary(BaseModel):
 
     material_types: list[str]
 
-    # The dashboard count represents saved versions for the newest target role.
-    # Keep the newest type separately so the UI does not misleadingly show an
-    # alphabetically-sorted collection of types as if it were the latest one.
+    # The dashboard count represents every saved material version owned by the
+    # current user. Per-role counts remain available in `job_workspaces`.
+    # Keep the newest type separately for supporting copy in the overview.
     latest_material_type: str | None
 
     application_id: int | None
