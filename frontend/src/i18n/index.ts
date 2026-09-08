@@ -1631,7 +1631,7 @@ const en: Dict = {
   "dashboard.roleCenter": "Role command center",
   "dashboard.roleCenterEmpty":
     "Analyse a role to bring its evidence, materials, questions, and next action into one workspace.",
-  "dashboard.roleMatch": "Match {score}/100",
+  "dashboard.roleMatch": "Match: {level}",
   "dashboard.roleEvidence": "{n} evidence",
   "dashboard.roleMaterials": "{n} material(s)",
   "dashboard.roleGaps": "Priority gaps: {skills}",
@@ -3101,7 +3101,7 @@ const zhCN: Dict = {
   "dashboard.roleCenter": "职位工作台",
   "dashboard.roleCenterEmpty":
     "先分析一个职位，即可在同一工作台查看证据、材料、问题和下一步。",
-  "dashboard.roleMatch": "匹配度 {score}/100",
+  "dashboard.roleMatch": "匹配度：{level}",
   "dashboard.roleEvidence": "{n} 条证据",
   "dashboard.roleMaterials": "{n} 份材料",
   "dashboard.roleGaps": "优先缺口：{skills}",
@@ -4572,7 +4572,7 @@ const zhTW: Dict = {
   "dashboard.roleCenter": "職位工作台",
   "dashboard.roleCenterEmpty":
     "先分析一個職位，即可在同一工作台查看證據、材料、問題和下一步。",
-  "dashboard.roleMatch": "匹配度 {score}/100",
+  "dashboard.roleMatch": "匹配度：{level}",
   "dashboard.roleEvidence": "{n} 條證據",
   "dashboard.roleMaterials": "{n} 份材料",
   "dashboard.roleGaps": "優先缺口：{skills}",

@@ -164,6 +164,13 @@ describe("DashboardPage", () => {
     expect(materialAction.closest("article")).not.toHaveTextContent(/^2$/);
   });
 
+  it("shows the user-facing match band instead of an internal score", async () => {
+    renderWithProviders(<DashboardPage onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText("匹配度：高")).toBeInTheDocument();
+    expect(screen.queryByText("匹配度 76/100")).not.toBeInTheDocument();
+  });
+
   it("opens the Experience Bank when the dashboard start action is clicked", async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
