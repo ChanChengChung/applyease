@@ -8,6 +8,7 @@ def list_all(
     *,
     query: str | None = None,
     confirmed: bool | None = None,
+    category: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
@@ -26,6 +27,9 @@ def list_all(
 
     if confirmed is not None:
         statement = statement.where(Experience.confirmed == confirmed)
+
+    if category:
+        statement = statement.where(Experience.category == category)
 
     return db.scalars(
         statement.order_by(Experience.created_at.desc(), Experience.id.desc())

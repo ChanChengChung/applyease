@@ -34,10 +34,12 @@ export function ApplicationFormPage({
   initialJobId,
   onJobSelected,
   onReturnToDashboard,
+  onReturnToBuilder,
 }: {
   initialJobId?: number;
   onJobSelected?: (job: { id: number; title: string; company: string }) => void;
   onReturnToDashboard?: () => void;
+  onReturnToBuilder?: () => void;
 }) {
   const [jobId, setJobId] = useState(initialJobId ? String(initialJobId) : "");
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -224,6 +226,16 @@ export function ApplicationFormPage({
     <main className="product-page form-page">
       <header className="product-hero">
         <div>
+          {onReturnToBuilder && (
+            <button
+              type="button"
+              className="text-action form-return-builder"
+              onClick={onReturnToBuilder}
+            >
+              <span aria-hidden="true">←</span>
+              {t("form.returnToBuilder")}
+            </button>
+          )}
           <p className="eyebrow">
             <strong>APPLYEASE</strong>
             <span className="page-wordmark">· APPLICATION FORM COPILOT</span>

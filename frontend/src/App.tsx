@@ -215,6 +215,7 @@ export function App() {
         initialJobId={selectedJob?.id}
         onJobSelected={setSelectedJob}
         onReturnToDashboard={() => navigate("dashboard")}
+        onReturnToBuilder={() => navigate("builder", selectedJob)}
       />
     ),
     resources: () => (

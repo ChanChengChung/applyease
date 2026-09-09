@@ -12,6 +12,7 @@ import {
   createExperience,
   deleteExperience,
   getExperienceImpacts,
+  listExperienceFolder,
   listExperiences,
   replaceExperience,
   updateExperience,
@@ -79,6 +80,7 @@ export function ProfilePage({
   const [openCategory, setOpenCategory] = useState<ExperienceCategory | null>(
     null,
   );
+  const [folderItems, setFolderItems] = useState<Experience[]>([]);
   const [showSkills, setShowSkills] = useState(false);
 
   const [newExperience, setNewExperience] = useState({
@@ -148,6 +150,23 @@ export function ProfilePage({
     void load();
   }, []);
 
+  const openExperienceFolder = async (
+    category: ExperienceCategory,
+    options: { preserveStatus?: boolean } = {},
+  ) => {
+    setShowSkills(false);
+    setOpenCategory(category);
+    if (!options.preserveStatus) setStatus("");
+    try {
+      // Read the folder from the API. This avoids opening a folder from only
+      // the first locally loaded page of evidence records.
+      setFolderItems(await listExperienceFolder(category));
+    } catch (error) {
+      setFolderItems([]);
+      setStatus(error instanceof Error ? error.message : t("profile.backendError"));
+    }
+  };
+
   const handleUpload = async (file: File) => {
     setBusy(true);
     setIsParsingCv(true);
@@ -175,6 +194,7 @@ export function ProfilePage({
       await updateExperience(item);
       setStatus(t("profile.saved"));
       await load();
+      if (openCategory) await openExperienceFolder(openCategory, { preserveStatus: true });
     } catch (error) {
       setStatus(
         error instanceof Error ? error.message : t("profile.updateFailed"),
@@ -191,6 +211,7 @@ export function ProfilePage({
       setSelectedIds((current) => current.filter((id) => id !== item.id));
       setStatus(t("profile.deleted"));
       await load();
+      if (openCategory) await openExperienceFolder(openCategory, { preserveStatus: true });
     } catch (error) {
       setStatus(
         error instanceof Error ? error.message : t("profile.deleteFailed"),
@@ -224,6 +245,7 @@ export function ProfilePage({
       const result = await bulkConfirmExperiences(selectedIds);
       setStatus(t("profile.bulkConfirmed", { n: result.updated }));
       await load();
+      if (openCategory) await openExperienceFolder(openCategory, { preserveStatus: true });
     } catch (error) {
       setStatus(
         error instanceof Error ? error.message : t("profile.bulkFailed"),
@@ -843,6 +865,24 @@ export function ProfilePage({
 
         {items.length === 0 ? (
           <div className="empty">{t("profile.empty")}</div>
+        ) : showSkills ? (
+          <section className="experience-category-view skills-folder-view">
+            <div className="experience-category-heading">
+              <button type="button" className="folder-back-button" onClick={() => setShowSkills(false)}>← {t("profile.folder.back")}</button>
+              <p className="eyebrow">{t("profile.folder.categoryKicker")}</p>
+              <h2>{t("profile.skillsFolder.title")}</h2>
+              <p>{t("profile.skillsFolder.sub")}</p>
+            </div>
+            <div className="skills-pack-grid">
+              {skillPacks.length ? skillPacks.map((pack) => (
+                <article className="skills-pack-card" key={pack.skill}>
+                  <h3>{pack.skill}</h3>
+                  <p>{t("profile.skillsFolder.evidenceCount", { n: pack.experiences.length })}</p>
+                  <ul>{pack.experiences.map((experience) => <li key={experience.id}>{experience.title}</li>)}</ul>
+                </article>
+              )) : <p className="privacy-note">{t("profile.skillsFolder.empty")}</p>}
+            </div>
+          </section>
         ) : openCategory === null ? (
           <section
             className="experience-library-folders"
@@ -865,7 +905,7 @@ export function ProfilePage({
                     style={
                       { "--folder-art": `url(${folder.art})` } as CSSProperties
                     }
-                    onClick={() => { setShowSkills(false); setOpenCategory(folder.category); }}
+                    onClick={() => void openExperienceFolder(folder.category)}
                     aria-label={t("profile.folder.openAria", {
                       category: t(`profile.category.${folder.category}`),
                       n: count,
@@ -912,24 +952,6 @@ export function ProfilePage({
               </button>
             </div>
           </section>
-        ) : showSkills ? (
-          <section className="experience-category-view skills-folder-view">
-            <div className="experience-category-heading">
-              <button type="button" className="folder-back-button" onClick={() => setShowSkills(false)}>← {t("profile.folder.back")}</button>
-              <p className="eyebrow">{t("profile.folder.categoryKicker")}</p>
-              <h2>{t("profile.skillsFolder.title")}</h2>
-              <p>{t("profile.skillsFolder.sub")}</p>
-            </div>
-            <div className="skills-pack-grid">
-              {skillPacks.length ? skillPacks.map((pack) => (
-                <article className="skills-pack-card" key={pack.skill}>
-                  <h3>{pack.skill}</h3>
-                  <p>{t("profile.skillsFolder.evidenceCount", { n: pack.experiences.length })}</p>
-                  <ul>{pack.experiences.map((experience) => <li key={experience.id}>{experience.title}</li>)}</ul>
-                </article>
-              )) : <p className="privacy-note">{t("profile.skillsFolder.empty")}</p>}
-            </div>
-          </section>
         ) : (
           <section className="experience-category-view">
             <div className="experience-category-heading">
@@ -953,11 +975,9 @@ export function ProfilePage({
                 </p>
               </div>
             </div>
-            {items.some((item) => item.category === openCategory) ? (
+            {folderItems.length ? (
               <div className="category-experience-grid">
-                {items
-                  .filter((item) => item.category === openCategory)
-                  .map((item) => (
+                {folderItems.map((item) => (
                     <ExperienceCard
                       key={item.id}
                       item={item}

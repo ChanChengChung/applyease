@@ -1,4 +1,4 @@
-import type { Experience, ExperienceImpact } from "../types/experience";
+import type { Experience, ExperienceCategory, ExperienceImpact } from "../types/experience";
 import { request } from "./request";
 
 export type ExperienceListOptions = {
@@ -6,6 +6,7 @@ export type ExperienceListOptions = {
   confirmed?: boolean;
   limit?: number;
   offset?: number;
+  category?: ExperienceCategory;
 };
 export async function listExperiences(
   options: ExperienceListOptions = {},
@@ -16,12 +17,18 @@ export async function listExperiences(
 
   if (options.confirmed !== undefined)
     params.set("confirmed", String(options.confirmed));
+  if (options.category) params.set("category", options.category);
 
   params.set("limit", String(options.limit ?? 100));
 
   params.set("offset", String(options.offset ?? 0));
 
   return request<Experience[]>(`/experiences?${params.toString()}`);
+}
+export async function listExperienceFolder(
+  category: ExperienceCategory,
+): Promise<Experience[]> {
+  return request<Experience[]>(`/experiences/folders/${encodeURIComponent(category)}`);
 }
 export type ExperiencePayload = Omit<
   Experience,

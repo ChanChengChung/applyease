@@ -93,6 +93,17 @@ describe("ApplicationFormPage", () => {
     });
   });
 
+  it("returns to the application-material workspace when opened from it", async () => {
+    const user = userEvent.setup();
+    const onReturnToBuilder = vi.fn();
+    renderWithProviders(
+      <ApplicationFormPage initialJobId={3} onReturnToBuilder={onReturnToBuilder} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "返回申请材料与表单" }));
+    expect(onReturnToBuilder).toHaveBeenCalledTimes(1);
+  });
+
   it("detects fields and batch-generates only answerable results", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ApplicationFormPage initialJobId={3} />);

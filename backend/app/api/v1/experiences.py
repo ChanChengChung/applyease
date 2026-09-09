@@ -10,6 +10,7 @@ from app.schemas.experience import (
     ExperienceRead,
     ExperienceUpdate,
     ExperienceImpactRead,
+    ExperienceCategory,
 )
 from app.crud import job as job_crud
 from app.crud import material as material_crud
@@ -33,13 +34,32 @@ def evidence_impact(db: Session = Depends(get_db)):
 def list_experiences(
     query: str | None = Query(default=None, max_length=200),
     confirmed: bool | None = None,
+    category: ExperienceCategory | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
 
     return experience_crud.list_all(
-        db, query=query, confirmed=confirmed, limit=limit, offset=offset
+        db, query=query, confirmed=confirmed, category=category, limit=limit, offset=offset
+    )
+
+
+@router.get("/folders/{category}", response_model=list[ExperienceRead])
+def list_experience_folder(
+    category: ExperienceCategory,
+    confirmed: bool | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Read one persisted Experience Bank folder from the server.
+
+    Folder contents are never derived from a browser-side slice of the first
+    page of records. The session ownership filter applies to this query too.
+    """
+    return experience_crud.list_all(
+        db, category=category, confirmed=confirmed, limit=limit, offset=offset
     )
 
 

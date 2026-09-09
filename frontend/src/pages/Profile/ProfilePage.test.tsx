@@ -7,6 +7,7 @@ import { ApiRequestError } from "../../services/request";
 
 const api = vi.hoisted(() => ({
   listExperiences: vi.fn(),
+  listExperienceFolder: vi.fn(),
   uploadCV: vi.fn(),
   updateExperience: vi.fn(),
   replaceExperience: vi.fn(),
@@ -40,6 +41,7 @@ describe("ProfilePage", () => {
     vi.clearAllMocks();
 
     api.listExperiences.mockResolvedValue([item]);
+    api.listExperienceFolder.mockResolvedValue([item]);
 
     api.updateExperience.mockResolvedValue(item);
     api.replaceExperience.mockResolvedValue(item);

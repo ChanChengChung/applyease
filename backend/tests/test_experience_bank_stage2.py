@@ -74,6 +74,31 @@ def test_search_status_filter_and_pagination():
     assert [item["id"] for item in response.json()] == [confirmed["id"]]
 
 
+def test_folder_endpoint_reads_only_the_requested_persisted_category():
+    suffix = uuid4().hex
+    project = _experience(f"Folder project {suffix}", "Org", True)
+    research_response = client.post(
+        "/api/v1/experiences",
+        json={
+            "title": f"Folder research {suffix}",
+            "organization": "Lab",
+            "description": "A persisted research record",
+            "skills": [],
+            "achievements": [],
+            "category": "research",
+        },
+    )
+    assert research_response.status_code == 200
+    research = research_response.json()
+
+    response = client.get("/api/v1/experiences/folders/research")
+
+    assert response.status_code == 200
+    returned_ids = {item["id"] for item in response.json()}
+    assert research["id"] in returned_ids
+    assert project["id"] not in returned_ids
+
+
 def test_bulk_confirm_reports_missing_ids_and_updates_records():
     suffix = uuid4().hex
 
