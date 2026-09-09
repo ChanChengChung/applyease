@@ -662,15 +662,6 @@ function MatchResult({
       ? "prepare"
       : "ready";
 
-  const labels: Record<string, string> = {
-    required_skill_match: t("ai.feature.job_match"),
-    preferred_skill_match: t("job.preferredSkills"),
-    experience_relevance: t("job.hero.title"),
-    quantified_evidence: t("shared.sources"),
-    education_background: t("builder.exportTitle"),
-    qualification_coverage: t("job.qualifications"),
-  };
-
   const allSkills = [...report.job.required_skills, ...report.job.preferred_skills];
   const coveredSkills = [...matchedRequired, ...matchedPreferred];
 
@@ -825,22 +816,6 @@ function MatchResult({
         )}
       </div>
 
-      {report.score_breakdown &&
-        Object.keys(report.score_breakdown).length > 0 && (
-          <div className="card role-analysis-breakdown">
-            <h2>{t("job.scoreBreakdown")}</h2>
-            <ul>
-              {Object.entries(report.score_breakdown).map(([key, value]) => (
-              <li
-                key={key}
-                style={{ "--score-value": value } as React.CSSProperties}
-              >
-                  {t("job.scoreUnit", { label: labels[key] || key, value })}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       <div className="card role-analysis-evidence">
         <h2>{t("job.evidence")}</h2>
         {report.evidence.length ? (
