@@ -728,15 +728,12 @@ def test_importing_a_web_research_opportunity_creates_a_real_analysed_job(monkey
     monkeypatch.setattr(
         opportunity_api,
         "import_public_job_page",
-        lambda _url: type(
-            "Draft",
-            (),
-            {
-                "title": "Quantitative Technology Intern",
-                "company": "Example Capital",
-                "description": "Build Python tools for quantitative research and test reliable data systems.",
-            },
-        )(),
+        lambda _url: {
+            "title": "Quantitative Technology Intern",
+            "company": "Example Capital",
+            "description": "Build Python tools for quantitative research and test reliable data systems.",
+            "source_url": "https://careers.example.com/role",
+        },
     )
     imported = client.post(
         f"/api/v1/opportunities/searches/{search.json()['id']}/import/0",

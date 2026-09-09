@@ -49,9 +49,13 @@ def _import_reviewed_opportunity(
         draft = import_public_job_page(validate_public_job_url(source_url))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    title = draft.title or str(row.get("title", ""))
-    company = draft.company or str(row.get("company", ""))
-    description = draft.description
+    # ``import_public_job_page`` normally returns a mapping, while a few
+    # integrations/tests provide a small object. Normalize both shapes here
+    # so a reviewed role can never fail with an AttributeError after import.
+    get_draft = draft.get if isinstance(draft, dict) else lambda key, default=None: getattr(draft, key, default)
+    title = str(get_draft("title", "") or row.get("title", ""))
+    company = str(get_draft("company", "") or row.get("company", ""))
+    description = str(get_draft("description", "") or "")
     if len(description.strip()) < 20:
         raise HTTPException(
             status_code=422,
@@ -70,7 +74,7 @@ def _import_reviewed_opportunity(
         company=company,
         description=description,
             source_url=str(
-                (draft.get("source_url") if isinstance(draft, dict) else getattr(draft, "source_url", ""))
+                get_draft("source_url", "")
                 or source_url
             ),
         **requirements,
