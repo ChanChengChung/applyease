@@ -9525,6 +9525,10 @@ th {
 .folder-project {
   background-color: #fff7e8 !important;
 }
+.folder-skills {
+  background-color: #eefbf8 !important;
+}
+.folder-skills .experience-folder-tab { background: #eefbf8; }
 .folder-project .experience-folder-tab {
   background: #fff7e8;
 }
@@ -9537,6 +9541,21 @@ th {
   display: grid;
   gap: 19px;
 }
+.skills-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.skills-pack-card {
+  padding: 18px;
+  border: 1px solid #d4e5f2;
+  border-radius: 15px;
+  background: #f8fcff;
+}
+.skills-pack-card h3 { margin: 0; color: #214260; font-size: 1rem; }
+.skills-pack-card p { margin: 5px 0 10px; color: #6b86a2; font-size: .78rem; }
+.skills-pack-card ul { margin: 0; padding-left: 18px; color: #4b6886; font-size: .78rem; }
+@media (max-width: 760px) { .skills-pack-grid { grid-template-columns: 1fr; } }
 .experience-category-heading {
   display: flex;
   align-items: flex-start;

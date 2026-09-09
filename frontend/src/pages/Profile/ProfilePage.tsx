@@ -31,6 +31,7 @@ import internshipFolder from "../../assets/experience-folders/internship.png";
 import leadershipFolder from "../../assets/experience-folders/leadership.png";
 import researchFolder from "../../assets/experience-folders/research.png";
 import projectFolder from "../../assets/experience-folders/project.png";
+import skillsFolder from "../../assets/experience-folders/skills.png";
 
 const PAGE_SIZE = 50;
 
@@ -78,6 +79,7 @@ export function ProfilePage({
   const [openCategory, setOpenCategory] = useState<ExperienceCategory | null>(
     null,
   );
+  const [showSkills, setShowSkills] = useState(false);
 
   const [newExperience, setNewExperience] = useState({
     title: "",
@@ -393,6 +395,19 @@ export function ProfilePage({
       }
     });
   };
+
+  const skillPacks = Array.from(
+    items.reduce((groups, experience) => {
+      for (const skill of experience.skills || []) {
+        const normalized = skill.trim();
+        if (!normalized) continue;
+        const existing = groups.get(normalized) || [];
+        if (!existing.some((item) => item.id === experience.id)) existing.push(experience);
+        groups.set(normalized, existing);
+      }
+      return groups;
+    }, new Map<string, Experience[]>()).entries(),
+  ).map(([skill, experiences]) => ({ skill, experiences })).sort((a, b) => a.skill.localeCompare(b.skill));
 
   return (
     <main className="product-page experience-page">
@@ -850,7 +865,7 @@ export function ProfilePage({
                     style={
                       { "--folder-art": `url(${folder.art})` } as CSSProperties
                     }
-                    onClick={() => setOpenCategory(folder.category)}
+                    onClick={() => { setShowSkills(false); setOpenCategory(folder.category); }}
                     aria-label={t("profile.folder.openAria", {
                       category: t(`profile.category.${folder.category}`),
                       n: count,
@@ -880,6 +895,39 @@ export function ProfilePage({
                   </button>
                 );
               })}
+              <button
+                type="button"
+                className="experience-folder folder-skills"
+                style={{ "--folder-art": `url(${skillsFolder})` } as CSSProperties}
+                onClick={() => { setOpenCategory(null); setShowSkills(true); }}
+                aria-label={t("profile.folder.openSkillsAria", { n: skillPacks.length })}
+              >
+                <span className="experience-folder-tab" aria-hidden="true" />
+                <span className="experience-folder-icon" aria-hidden="true">✧</span>
+                <span className="experience-folder-copy">
+                  <strong>{t("profile.skillsFolder.title")}</strong>
+                  <small>{t("profile.folder.count", { n: skillPacks.length })}</small>
+                </span>
+                <span className="experience-folder-open" aria-hidden="true">→</span>
+              </button>
+            </div>
+          </section>
+        ) : showSkills ? (
+          <section className="experience-category-view skills-folder-view">
+            <div className="experience-category-heading">
+              <button type="button" className="folder-back-button" onClick={() => setShowSkills(false)}>← {t("profile.folder.back")}</button>
+              <p className="eyebrow">{t("profile.folder.categoryKicker")}</p>
+              <h2>{t("profile.skillsFolder.title")}</h2>
+              <p>{t("profile.skillsFolder.sub")}</p>
+            </div>
+            <div className="skills-pack-grid">
+              {skillPacks.length ? skillPacks.map((pack) => (
+                <article className="skills-pack-card" key={pack.skill}>
+                  <h3>{pack.skill}</h3>
+                  <p>{t("profile.skillsFolder.evidenceCount", { n: pack.experiences.length })}</p>
+                  <ul>{pack.experiences.map((experience) => <li key={experience.id}>{experience.title}</li>)}</ul>
+                </article>
+              )) : <p className="privacy-note">{t("profile.skillsFolder.empty")}</p>}
             </div>
           </section>
         ) : (
