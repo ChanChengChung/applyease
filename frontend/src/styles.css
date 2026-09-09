@@ -6910,6 +6910,15 @@ select {
   font-weight: 850;
   text-decoration: none;
 }
+.tracker-official-link {
+  display: inline-flex;
+  align-items: center;
+  color: #2456dc;
+  font-weight: 800;
+  text-decoration: none;
+}
+.tracker-official-link:hover { text-decoration: underline; }
+.tracker-current-target .tracker-official-link { margin-top: 6px; }
 .tracker-item-actions .tracker-search-application:hover {
   border-color: #91b8ee;
   background: #e1efff;

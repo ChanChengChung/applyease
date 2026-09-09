@@ -199,6 +199,8 @@ export function TrackerPage({
     const url = linkedJob(item)?.source_url;
     return url || `https://www.google.com/search?q=${encodeURIComponent(`${item.company} ${item.role} application`)}`;
   };
+  const officialUrlFor = (item: TrackedApplication) => linkedJob(item)?.source_url || "";
+  const currentTargetOfficialUrl = currentTarget?.source_url || (currentTarget?.id ? workspaceJobs.find((job) => job.id === currentTarget.id)?.source_url : "");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -617,6 +619,11 @@ export function TrackerPage({
                 {currentTarget.company} · {currentTarget.title}
               </h2>
               <p>{t("tracker.currentTargetHelp")}</p>
+              {currentTargetOfficialUrl && (
+                <a className="tracker-official-link" href={currentTargetOfficialUrl} target="_blank" rel="noreferrer">
+                  {t("tracker.openOfficialRole")} ↗
+                </a>
+              )}
             </div>
             <button type="button" onClick={() => onOpenJob?.(currentTarget)}>
               <span aria-hidden="true">⌕</span>
@@ -983,6 +990,16 @@ export function TrackerPage({
                         </div>
                       </div>
                       <div className="tracker-item-actions">
+                        {officialUrlFor(item) && (
+                          <a
+                            className="tracker-official-link"
+                            href={officialUrlFor(item)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t("tracker.openOfficialRole")} ↗
+                          </a>
+                        )}
                         <a
                           className="tracker-search-application"
                           href={applicationUrl(item)}

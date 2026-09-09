@@ -189,7 +189,7 @@ describe("DashboardPage", () => {
     const onNavigate = vi.fn();
     renderWithProviders(<DashboardPage onNavigate={onNavigate} />);
 
-    await user.click(await screen.findByRole("button", { name: /职位工作台/ }));
+    await user.click(await screen.findByRole("button", { name: /申请追踪/ }));
 
     expect(onNavigate).toHaveBeenCalledWith(
       "tracker",
