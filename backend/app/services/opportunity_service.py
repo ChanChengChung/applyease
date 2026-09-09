@@ -176,6 +176,32 @@ _STUDENT_ROLE_PATTERN = re.compile(
     r"\b(?:intern(?:ship)?|graduate|new[ -]?grad|campus|co-op)\b", re.I
 )
 
+# Every UI category has a stable English retrieval vocabulary. This is
+# deliberately independent from the student's free-text goal, so selecting a
+# Chinese category cannot silently fall back to the same technology postings.
+_CATEGORY_SEARCH_TERMS: dict[str, tuple[str, ...]] = {
+    "education_training": ("education", "teaching", "learning", "training"),
+    "finance": ("finance", "investment", "banking", "accounting"),
+    "engineering": ("engineering", "developer", "technical"),
+    "data_ai": ("data", "analytics", "machine learning", "artificial intelligence"),
+    "consulting": ("consulting", "strategy", "advisory"),
+    "marketing_sales": ("marketing", "communications", "sales", "brand"),
+    "operations": ("operations", "supply chain", "program management"),
+    # Covers humanities and literary pathways as well as academic research.
+    "education_research": ("research", "academic", "literature", "humanities", "publishing"),
+    "healthcare": ("healthcare", "clinical", "medical", "public health"),
+    "legal_public": ("legal", "policy", "compliance", "public affairs"),
+    "other": (),
+}
+
+
+def _category_augmented_goal(career_goal: str, career_category: str) -> str:
+    return " ".join(
+        part
+        for part in (career_goal.strip(), " ".join(_CATEGORY_SEARCH_TERMS.get(career_category, ())))
+        if part
+    ).strip()
+
 
 def _official_ats_url(value: str) -> str | None:
     """Accept only direct, public pages on well-known employer ATS hosts.
@@ -196,6 +222,37 @@ def _official_ats_url(value: str) -> str | None:
     if host == "jobs.lever.co" and len([part for part in path.split("/") if part]) < 2:
         return None
     if host == "jobs.ashbyhq.com" and len([part for part in path.split("/") if part]) < 2:
+        return None
+    return parsed._replace(fragment="").geturl()
+
+
+def _public_job_result_url(value: str) -> str | None:
+    """Accept a search-provider result only when it looks like a public job page.
+
+    Restricting every web result to three ATS vendors excluded universities,
+    publishers, charities and public institutions—the places where several UI
+    categories actually recruit. The import pipeline still resolves the host
+    and rejects private addresses before fetching it; this adds an additional
+    conservative URL/path gate at discovery time.
+    """
+    ats_url = _official_ats_url(value)
+    if ats_url:
+        return ats_url
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").casefold()
+    path = parsed.path.casefold()
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username
+        or parsed.password
+        or host in {"localhost", "127.0.0.1", "::1"}
+    ):
+        return None
+    # A direct vacancy needs an explicit job/career path or a dedicated
+    # careers hostname. This excludes generic company homepages and articles.
+    job_path = re.search(r"/(?:jobs?|careers?|vacanc(?:y|ies)|positions?|recruit(?:ment|ing)?)/", path)
+    if not job_path and not re.search(r"(?:jobs?|careers?|recruit)\.", host):
         return None
     return parsed._replace(fragment="").geturl()
 
@@ -239,7 +296,7 @@ def _company_from_ats_url(url: str) -> str:
     host = (parsed.hostname or "").casefold()
     if bits and host in _OFFICIAL_ATS_HOSTS:
         return bits[0].replace("-", " ").title()[:200]
-    return "Official employer"
+    return (host.split(".")[0].replace("-", " ").title() or "Official employer")[:200]
 
 
 def _localized_ats_copy(language: str, skill_preview: str) -> tuple[str, str]:
@@ -1145,7 +1202,7 @@ def _brave_ats_search(
     candidates: list[dict] = []
     seen_urls: set[str] = set()
     for row in raw_results:
-        url = _official_ats_url(str(row.get("url", "")))
+        url = _public_job_result_url(str(row.get("url", "")))
         title = _search_title(str(row.get("title", "")))
         description = _search_title(str(row.get("description", "")))
         role_text = f"{title} {description}"
@@ -1253,7 +1310,7 @@ def _bocha_ats_search(
     candidates: list[dict] = []
     seen_urls: set[str] = set()
     for row in raw_results:
-        url = _official_ats_url(str(row.get("url", "")))
+        url = _public_job_result_url(str(row.get("url", "")))
         title = _search_title(str(row.get("name", "")))
         description = _search_title(str(row.get("snippet", "")))
         role_text = f"{title} {description}"
@@ -1308,7 +1365,9 @@ def discover_opportunities(
     language: str,
     limit: int,
     search_modes: list[str],
+    career_category: str = "",
 ) -> dict:
+    search_goal = _category_augmented_goal(career_goal, career_category)
     evidence = _compact_evidence(experiences)
     results: list[dict] = []
     sources: list[dict] = []
@@ -1317,7 +1376,7 @@ def discover_opportunities(
     unavailable_reason = ""
     if "official_ats" in search_modes:
         ats = _direct_ats_search(
-            evidence, career_goal=career_goal, location=location, language=language, limit=limit,
+            evidence, career_goal=search_goal, location=location, language=language, limit=limit,
             work_preference=work_preference, timing=timing
         )
         results.extend(ats["opportunities"])
@@ -1332,7 +1391,7 @@ def discover_opportunities(
 
     if "ai" not in search_modes:
         deduped = _dedupe_and_rank(
-            results, career_goal=career_goal, location=location, limit=limit,
+            results, career_goal=search_goal, location=location, limit=limit,
             work_preference=work_preference
         )
         return {
@@ -1345,7 +1404,7 @@ def discover_opportunities(
 
     try:
         search_kwargs = {
-            "career_goal": career_goal,
+            "career_goal": search_goal,
             "location": location,
             "language": language,
             "limit": limit,
@@ -1387,7 +1446,7 @@ def discover_opportunities(
         )
         return {
             "opportunities": _dedupe_and_rank(
-                results, career_goal=career_goal, location=location, limit=limit,
+                results, career_goal=search_goal, location=location, limit=limit,
                 work_preference=work_preference
             ),
             "sources": _dedupe_sources(sources),
@@ -1403,7 +1462,7 @@ def discover_opportunities(
         unavailable_reason = "provider_unavailable"
     return {
         "opportunities": _dedupe_and_rank(
-            results, career_goal=career_goal, location=location, limit=limit,
+            results, career_goal=search_goal, location=location, limit=limit,
             work_preference=work_preference
         ),
         "sources": _dedupe_sources(sources),

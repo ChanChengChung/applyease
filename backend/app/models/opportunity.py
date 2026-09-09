@@ -21,6 +21,7 @@ class OpportunitySearch(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     career_goal: Mapped[str] = mapped_column(Text, default="")
+    career_category: Mapped[str] = mapped_column(String(40), default="", server_default="")
     location: Mapped[str] = mapped_column(String(160), default="")
     work_preference: Mapped[str] = mapped_column(String(40), default="")
     timing: Mapped[str] = mapped_column(String(160), default="")

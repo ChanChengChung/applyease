@@ -7,10 +7,18 @@ from app.schemas.job import JobRead
 from app.schemas.tracker import TrackerRead
 
 
+CAREER_CATEGORIES = {
+    "education_training", "finance", "engineering", "data_ai", "consulting",
+    "marketing_sales", "operations", "education_research", "healthcare",
+    "legal_public", "other",
+}
+
+
 class OpportunitySearchRequest(BaseModel):
     """A deliberate, privacy-aware public job research request."""
 
     career_goal: str = Field(default="", max_length=1200)
+    career_category: str = Field(default="", max_length=40)
     location: str = Field(default="", max_length=160)
     work_preference: Literal["any", "onsite", "hybrid", "remote"] = "any"
     timing: str = Field(default="", max_length=160)
@@ -26,6 +34,14 @@ class OpportunitySearchRequest(BaseModel):
     @classmethod
     def normalize_text(cls, value: str) -> str:
         return " ".join(value.strip().split())
+
+    @field_validator("career_category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        value = value.strip()
+        if value and value not in CAREER_CATEGORIES:
+            raise ValueError("Unsupported career category")
+        return value
 
     @field_validator("search_modes")
     @classmethod
@@ -55,6 +71,7 @@ class OpportunityMatch(BaseModel):
 class OpportunitySearchRead(BaseModel):
     id: int
     career_goal: str
+    career_category: str = ""
     location: str
     work_preference: str
     timing: str

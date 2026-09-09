@@ -18,6 +18,7 @@ export type OpportunityMatch = {
 export type OpportunitySearch = {
   id: number;
   career_goal: string;
+  career_category: string;
   location: string;
   work_preference: "any" | "onsite" | "hybrid" | "remote";
   timing: string;
@@ -39,6 +40,7 @@ export type OpportunitySearch = {
 
 export type OpportunitySearchPayload = {
   career_goal: string;
+  career_category: string;
   location: string;
   work_preference: "any" | "onsite" | "hybrid" | "remote";
   timing: string;

@@ -87,6 +87,7 @@ describe("OpportunityRadarPage", () => {
       expect(api.searchOpportunities).toHaveBeenCalledWith(
         expect.objectContaining({
           career_goal: "寻找符合我已确认经历的 金融 早期职业机会。",
+          career_category: "finance",
           consent_to_web_search: true,
           experience_ids: [21],
           search_modes: ["official_ats", "ai"],

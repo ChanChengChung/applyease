@@ -10,6 +10,31 @@ from app.services import opportunity_service
 client = TestClient(app)
 
 
+def test_each_career_category_has_distinct_retrieval_terms():
+    expected_categories = {
+        "education_training", "finance", "engineering", "data_ai", "consulting",
+        "marketing_sales", "operations", "education_research", "healthcare",
+        "legal_public", "other",
+    }
+    assert set(opportunity_service._CATEGORY_SEARCH_TERMS) == expected_categories
+    for category in expected_categories - {"other"}:
+        goal = opportunity_service._category_augmented_goal("早期职业机会", category)
+        assert goal != "早期职业机会"
+
+
+def test_humanities_category_expands_to_literary_and_publishing_terms():
+    goal = opportunity_service._category_augmented_goal("文学实习", "education_research")
+    assert "literature" in goal
+    assert "publishing" in goal
+
+
+def test_public_job_result_url_allows_a_safe_university_careers_page():
+    assert opportunity_service._public_job_result_url(
+        "https://careers.example.edu/jobs/literary-research-intern"
+    ) == "https://careers.example.edu/jobs/literary-research-intern"
+    assert opportunity_service._public_job_result_url("https://example.edu/about") is None
+
+
 def _token() -> str:
     response = client.post(
         "/api/v1/auth/register",

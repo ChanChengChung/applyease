@@ -276,6 +276,7 @@ export function OpportunityRadarPage({
     try {
       const result = await searchOpportunities({
         career_goal: careerGoal.trim(),
+        career_category: careerCategory,
         location: location.trim(),
         work_preference: workPreference,
         timing: timing.trim(),
