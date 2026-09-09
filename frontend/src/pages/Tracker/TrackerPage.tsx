@@ -1342,60 +1342,6 @@ export function TrackerPage({
                                     </div>
                                   </div>
                                 )}
-                                {((workspace.material_versions || []).length > 0 ||
-                                  workspace.questions_total > 0 ||
-                                  Boolean(workspace.learning_plan_id)) && (
-                                  <div className="materials-ready-panel">
-                                    <div>
-                                      <strong>
-                                        {t("tracker.materialsReadyTitle")}
-                                      </strong>
-                                      <p>
-                                        {t("tracker.materialsReadySub", {
-                                          n: workspace.material_versions.length,
-                                        })}
-                                      </p>
-                                    </div>
-                                    <ul>
-                                      {workspace.material_versions.map(
-                                        (version) => (
-                                          <li key={version.id}>
-                                            <span>{version.material_type}</span>
-                                            <small>
-                                              {version.fact_check_passed
-                                                ? t("tracker.integrityPass")
-                                                : t("tracker.integrityReview")}
-                                            </small>
-                                          </li>
-                                        ),
-                                      )}
-                                      <li className="tracker-prepared-answer">
-                                        <span>{t("tracker.materialsReadyAnswers", {
-                                          ready: workspace.answers_ready,
-                                          total: workspace.questions_total,
-                                        })}</span>
-                                      </li>
-                                      <li className="tracker-prepared-learning">
-                                        <span>
-                                          {workspace.learning_plan_id
-                                            ? t("tracker.materialsReadyLearning", {
-                                                steps: workspace.learning_plan_steps || 0,
-                                              })
-                                            : t("tracker.materialsReadyLearningEmpty")}
-                                        </span>
-                                      </li>
-                                    </ul>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        linkedJob(item) &&
-                                        onOpenBuilder?.(linkedJob(item)!)
-                                      }
-                                    >
-                                      {t("tracker.openMaterials")}
-                                    </button>
-                                  </div>
-                                )}
                               </>
                             );
                           })()

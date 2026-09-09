@@ -276,9 +276,8 @@ describe("TrackerPage", () => {
         expect.objectContaining({ behavior: "smooth", block: "start" }),
       ),
     );
-    expect(screen.getByText("这份职位已准备的材料")).toBeInTheDocument();
-    expect(screen.getByText("申请题回答：已完成 1/2")).toBeInTheDocument();
-    expect(screen.getByText("学习·补强计划：已保存 3 步")).toBeInTheDocument();
+    expect(screen.queryByText("这份职位已准备的材料")).not.toBeInTheDocument();
+    expect(screen.getByText("查看材料")).toBeInTheDocument();
   });
 
   it("updates the current target when another analyzed role is selected", async () => {

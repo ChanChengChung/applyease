@@ -1227,12 +1227,6 @@ const en: Dict = {
   "tracker.integrityReview": "needs fact review",
   "tracker.experimentNotice":
     "This records context, not causation: outcome changes cannot prove that one version caused a result.",
-  "tracker.materialsReadyTitle": "Your application materials",
-  "tracker.materialsReadySub":
-    "{n} version(s) are ready for this role. Open them to review, edit or export.",
-  "tracker.materialsReadyAnswers": "Application answers: {ready}/{total} ready",
-  "tracker.materialsReadyLearning": "Learning · reinforcement plan: {steps} saved step(s)",
-  "tracker.materialsReadyLearningEmpty": "Learning · reinforcement plan: not created yet",
 
   // AI Quality
 
@@ -2732,12 +2726,6 @@ const zhCN: Dict = {
   "tracker.integrityReview": "需要事实复核",
   "tracker.experimentNotice":
     "这里记录的是上下文，不是因果关系：申请结果无法证明某一个版本导致了结果。",
-  "tracker.materialsReadyTitle": "这份职位已准备的材料",
-  "tracker.materialsReadySub":
-    "已为此职位生成 {n} 个版本；可前往申请材料查看、编辑或导出。",
-  "tracker.materialsReadyAnswers": "申请题回答：已完成 {ready}/{total}",
-  "tracker.materialsReadyLearning": "学习·补强计划：已保存 {steps} 步",
-  "tracker.materialsReadyLearningEmpty": "学习·补强计划：尚未创建",
 
   "ai.hero.title": "AI 生成回答质量与运行状态",
   "ai.hero.sub":
@@ -4211,12 +4199,6 @@ const zhTW: Dict = {
   "tracker.integrityReview": "需要事實覆核",
   "tracker.experimentNotice":
     "這裡記錄的是上下文，不是因果關係：申請結果無法證明某一個版本導致了結果。",
-  "tracker.materialsReadyTitle": "這份職位已準備的材料",
-  "tracker.materialsReadySub":
-    "已為此職位建立 {n} 個版本；可前往申請材料查看、編輯或匯出。",
-  "tracker.materialsReadyAnswers": "申請題回答：已完成 {ready}/{total}",
-  "tracker.materialsReadyLearning": "學習·補強計畫：已儲存 {steps} 步",
-  "tracker.materialsReadyLearningEmpty": "學習·補強計畫：尚未建立",
 
   "ai.hero.title": "AI 生成回答品質與運行狀態",
   "ai.hero.sub":
