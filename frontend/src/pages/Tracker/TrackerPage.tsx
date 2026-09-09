@@ -265,7 +265,14 @@ export function TrackerPage({
   useEffect(() => {
     if (!initialJob || loading) return;
     const record = items.find((item) => item.job_id === initialJob.id);
-    if (!record) return;
+    if (!record) {
+      const frame = window.requestAnimationFrame(() => {
+        document
+          .getElementById("tracker-add-application")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
     setRecordView(record.status === "saved" ? "planning" : "applied");
     const frame = window.requestAnimationFrame(() => {
       document
@@ -735,6 +742,7 @@ export function TrackerPage({
           )}
         </section>
         <form
+          id="tracker-add-application"
           className="card structured-form-card tracker-create-card"
           onSubmit={add}
         >
