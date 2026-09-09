@@ -154,6 +154,7 @@ def build_application_readiness(job, experiences, materials, applications) -> di
         "blockers": blockers,
         "warnings": warnings,
         "match_score": report.overall_score,
+        "match_level": report.match_level,
         "missing_required_skills": report.missing_required_skills,
         "items": items,
         "verdict": verdict,

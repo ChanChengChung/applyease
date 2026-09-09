@@ -53,6 +53,7 @@ export type DashboardSummary = {
   job_workspaces?: Array<
     NavigationJob & {
       match_score: number;
+      match_level?: "low" | "medium" | "high" | "very_high";
       evidence_count: number;
       missing_skills: string[];
       material_count: number;

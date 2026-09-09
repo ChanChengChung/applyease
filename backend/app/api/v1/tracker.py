@@ -120,6 +120,7 @@ def workspace(application_id: int, db: Session = Depends(get_db)):
         application_id=item.id,
         job_id=job.id,
         match_score=report.overall_score,
+        match_level=report.match_level,
         evidence_count=len(report.evidence),
         missing_skills=report.missing_skills,
         material_types=sorted({material.material_type for material in materials}),

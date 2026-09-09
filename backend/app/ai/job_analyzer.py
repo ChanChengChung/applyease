@@ -17,6 +17,7 @@ from app.services.job_analysis_service import (
     build_match_report,
     extract_job_requirements,
 )
+from app.services.match_level_service import match_level_for_score
 from app.services.rag_service import format_context, retrieve_context
 
 JOB_SCHEMA: dict[str, Any] = {
@@ -255,9 +256,11 @@ def build_match_report_ai(
         + (preferred_matched / max(len(preferred), 1)) * 20
     )
 
+    final_score = min(score, 100)
     return MatchReport(
         job=_job_read_with_resolved_skills(job, required, preferred),
-        overall_score=min(score, 100),
+        overall_score=final_score,
+        match_level=match_level_for_score(final_score),
         matched_skills=matched,
         missing_skills=missing,
         evidence=evidence,

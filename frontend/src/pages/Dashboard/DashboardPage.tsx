@@ -8,7 +8,7 @@ import type {
 } from "../../types/dashboard";
 import { PageFeedback } from "../../components/PageFeedback";
 import { useT } from "../../i18n/LanguageProvider";
-import { matchLevelForScore } from "../../utils/matchLevel";
+import { matchLevelTranslationKey, resolveMatchLevel } from "../../utils/matchLevel";
 
 type Props = {
   onNavigate: (target: PageId, job?: NavigationJob) => void;
@@ -247,7 +247,7 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
                 <div className="tags">
                   <span>
                     {t("dashboard.roleMatch", {
-                      level: t(`job.matchLevel.${matchLevelForScore(job.match_score)}`),
+                      level: t(`job.matchLevel.${matchLevelTranslationKey(resolveMatchLevel(job.match_level, job.match_score))}`),
                     })}
                   </span>
                   <span>

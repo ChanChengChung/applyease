@@ -89,6 +89,45 @@ def test_rule_extractor_does_not_turn_career_domains_into_skill_gaps():
     assert "Market Making" not in result["required_skills"]
 
 
+def test_non_technical_role_requirements_match_grounded_transferable_evidence():
+    job = Job(
+        id=104,
+        title="Data Center Inventory & Asset Technician Manager",
+        company="Example",
+        description=(
+            "High School Diploma and warehouse or supply chain experience in an "
+            "information technology environment. 1+ year project management experience."
+        ),
+        required_skills=[],
+        preferred_skills=[],
+        responsibilities=["Plan operational work with technical teams."],
+        qualifications=["1+ year project management experience in IT operations."],
+    )
+    job.created_at = datetime.now(timezone.utc)
+    experience = Experience(
+        id=204,
+        title="Product project lead",
+        organization="Example",
+        description=(
+            "Planned and executed a product workflow. Built a FastAPI and PostgreSQL backend "
+            "for the team."
+        ),
+        skills=["FastAPI", "PostgreSQL"],
+        achievements=[{"text": "Delivered the workflow", "source": "CV.pdf", "verified": False}],
+        confirmed=True,
+    )
+
+    report = build_match_report(job, [experience])
+
+    assert "Project Management" in report.job.required_skills
+    assert "IT Operations" in report.job.required_skills
+    assert "Project Management" in report.matched_required_skills
+    assert "IT Operations" in report.matched_required_skills
+    assert report.evidence
+    assert report.score_breakdown["experience_relevance"] > 0
+    assert report.match_level in {"medium", "high", "very_high"}
+
+
 def test_saved_analysis_is_augmented_with_explicit_language_requirements():
     """Older saved/LLM output must not hide a required language from the report."""
     job = Job(

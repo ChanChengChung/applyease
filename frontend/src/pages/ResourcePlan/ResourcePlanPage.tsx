@@ -71,14 +71,14 @@ function concisePlanSummary(value: string): string {
   return `${compact.slice(0, 220).trimEnd()}…`;
 }
 
-function resourceMatchLevel(item: LearningResource): "very_high" | "high" | "fair" | "low" {
+function resourceMatchLevel(item: LearningResource): "very_high" | "high" | "medium" | "low" {
   if (item.match_level) return item.match_level;
   // Older API payloads may omit the band. Treat a missing/legacy zero as a
   // conservative baseline, not as a failed match.
   const score = item.match_score && item.match_score > 0 ? item.match_score : 50;
-  if (score >= 85) return "very_high";
-  if (score >= 70) return "high";
-  if (score >= 45) return "fair";
+  if (score >= 80) return "very_high";
+  if (score >= 60) return "high";
+  if (score >= 40) return "medium";
   return "low";
 }
 

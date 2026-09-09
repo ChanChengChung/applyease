@@ -22,7 +22,7 @@ export type LearningResource = {
   link_status?: string;
   last_checked_at?: string | null;
   match_score?: number;
-  match_level?: "very_high" | "high" | "fair" | "low";
+  match_level?: "very_high" | "high" | "medium" | "low";
   matched_skills?: string[];
   recommendation_reason?: string;
   created_at: string;

@@ -14,7 +14,7 @@ import type { JobImportDraft, MatchReport } from "../../types/job";
 import type { NavigationJob } from "../../types/dashboard";
 import { PageFeedback } from "../../components/PageFeedback";
 import { useT } from "../../i18n/LanguageProvider";
-import { matchLevelForScore } from "../../utils/matchLevel";
+import { matchLevelTranslationKey, resolveMatchLevel } from "../../utils/matchLevel";
 
 const JOB_ANALYSIS_SESSION_KEY = "applyease.job-analysis-draft.v1";
 
@@ -664,6 +664,7 @@ function MatchResult({
 
   const allSkills = [...report.job.required_skills, ...report.job.preferred_skills];
   const coveredSkills = [...matchedRequired, ...matchedPreferred];
+  const matchLevel = resolveMatchLevel(report.match_level, report.overall_score);
 
   return (
     <section className="report role-analysis-dashboard" id="job-analysis-result" tabIndex={-1}>
@@ -676,9 +677,9 @@ function MatchResult({
         <div
           className="role-analysis-score-ring"
           style={{ "--score": `${report.overall_score * 3.6}deg` } as React.CSSProperties}
-          aria-label={`${t("job.matchScore")} ${t(`job.matchLevel.${matchLevelForScore(report.overall_score)}`)}`}
+          aria-label={`${t("job.matchScore")} ${t(`job.matchLevel.${matchLevelTranslationKey(matchLevel)}`)}`}
         >
-          <strong>{t(`job.matchLevel.${matchLevelForScore(report.overall_score)}`)}</strong>
+          <strong>{t(`job.matchLevel.${matchLevelTranslationKey(matchLevel)}`)}</strong>
           <span>{t("job.matchScore")}</span>
         </div>
       </header>

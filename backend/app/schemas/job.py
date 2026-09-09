@@ -166,6 +166,8 @@ class MatchReport(BaseModel):
 
     overall_score: int = Field(ge=0, le=100)
 
+    match_level: Literal["low", "medium", "high", "very_high"] = "low"
+
     matched_skills: list[str]
 
     missing_skills: list[str]
@@ -209,6 +211,8 @@ class ApplicationReadiness(BaseModel):
     blockers: int
     warnings: int
     match_score: int
+
+    match_level: Literal["low", "medium", "high", "very_high"] = "low"
     missing_required_skills: list[str] = Field(default_factory=list)
     items: list[ReadinessItem]
     verdict: str = "prepare"

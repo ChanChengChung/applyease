@@ -39,7 +39,7 @@ def test_resource_score_bands_never_treat_missing_saved_score_as_zero():
     score = baseline_resource_score(Resource())
     assert 35 <= score <= 75
     assert score > 0
-    assert match_level_for_score(score) in {"fair", "high"}
+    assert match_level_for_score(score) in {"medium", "high"}
 
 
 def test_resource_recommendations_follow_job_gaps():
@@ -62,7 +62,7 @@ def test_resource_recommendations_follow_job_gaps():
     assert any("OCaml" in item["skills"] for item in resources)
 
     assert all(item["project"]["estimated_days"] >= 1 for item in resources)
-    assert all(item["match_level"] in {"very_high", "high", "fair", "low"} for item in resources)
+    assert all(item["match_level"] in {"very_high", "high", "medium", "low"} for item in resources)
     assert all(item["recommendation_reason"] for item in resources)
 
 
@@ -112,7 +112,7 @@ def test_starter_plan_supports_a_student_without_cv_or_target_job():
     assert plan["resources"]
     assert any(item["provider"] == "Kaggle" for item in plan["resources"])
     assert all(item["match_score"] > 0 for item in plan["resources"])
-    assert all(item["match_level"] in {"very_high", "high", "fair", "low"} for item in plan["resources"])
+    assert all(item["match_level"] in {"very_high", "high", "medium", "low"} for item in plan["resources"])
     assert "reflection" in plan["milestones"][-1]
 
     restored = client.get("/api/v1/resources/starter-plans")

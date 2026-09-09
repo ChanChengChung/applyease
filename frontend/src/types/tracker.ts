@@ -62,6 +62,7 @@ export type ApplicationWorkspace = {
   application_id: number;
   job_id?: number;
   match_score?: number;
+  match_level?: "low" | "medium" | "high" | "very_high";
   evidence_count: number;
   missing_skills: string[];
   material_types: string[];

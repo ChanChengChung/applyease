@@ -43,7 +43,7 @@ import type {
   ResumeTemplate,
 } from "../../types/material";
 import { useI18n, useT } from "../../i18n/LanguageProvider";
-import { matchLevelForScore } from "../../utils/matchLevel";
+import { matchLevelTranslationKey, resolveMatchLevel } from "../../utils/matchLevel";
 import {
   createManualQuestion,
   getLatestApplication,
@@ -1196,8 +1196,8 @@ export function ApplicationBuilderPage({
                         : t("builder.readinessNeedsPreparation")}
                     </p>
                   </div>
-                  <div className="preflight-score" aria-label={`${t("builder.preflightScore")} ${t(`job.matchLevel.${matchLevelForScore(readiness.match_score)}`)}`}>
-                    <strong>{t(`job.matchLevel.${matchLevelForScore(readiness.match_score)}`)}</strong>
+                  <div className="preflight-score" aria-label={`${t("builder.preflightScore")} ${t(`job.matchLevel.${matchLevelTranslationKey(resolveMatchLevel(readiness.match_level, readiness.match_score))}`)}`}>
+                    <strong>{t(`job.matchLevel.${matchLevelTranslationKey(resolveMatchLevel(readiness.match_level, readiness.match_score))}`)}</strong>
                     <span>{t("builder.preflightScore")}</span>
                   </div>
                 </div>

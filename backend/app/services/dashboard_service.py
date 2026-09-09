@@ -166,6 +166,7 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
                 "title": candidate.title,
                 "company": candidate.company,
                 "match_score": report.overall_score if report else 0,
+                "match_level": report.match_level if report else "low",
                 "evidence_count": len(report.evidence) if report else 0,
                 "missing_skills": report.missing_skills[:3] if report else [],
                 "material_count": len(candidate_materials),

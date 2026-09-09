@@ -129,6 +129,7 @@ class ApplicationWorkspaceRead(BaseModel):
     application_id: int
     job_id: int | None = None
     match_score: int | None = None
+    match_level: Literal["low", "medium", "high", "very_high"] | None = None
     evidence_count: int = 0
     missing_skills: list[str] = Field(default_factory=list)
     material_types: list[str] = Field(default_factory=list)

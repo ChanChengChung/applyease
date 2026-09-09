@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.models.resource import LearningResource
+from app.services.match_level_service import match_level_for_score
 
 
 RESOURCE_CATALOG = [
@@ -215,17 +216,6 @@ RESOURCE_CATALOG = [
 
 DIFFICULTY_RANK = {"beginner": 0, "intermediate": 1, "advanced": 2}
 PLAN_GOALS = {"skills", "project", "interview"}
-
-
-def match_level_for_score(score: int) -> str:
-    """Convert the internal ranking score into a stable user-facing band."""
-    if score >= 85:
-        return "very_high"
-    if score >= 70:
-        return "high"
-    if score >= 45:
-        return "fair"
-    return "low"
 
 
 def baseline_resource_score(resource: LearningResource) -> int:

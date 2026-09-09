@@ -25,6 +25,7 @@ import type {
 import { useI18n, useT } from "../../i18n/LanguageProvider";
 import { listJobs } from "../../services/jobApi";
 import type { Job } from "../../types/job";
+import { matchLevelTranslationKey, resolveMatchLevel } from "../../utils/matchLevel";
 
 const statuses: TrackerStatus[] = [
   "saved",
@@ -1223,6 +1224,7 @@ export function TrackerPage({
                           (() => {
                             const workspace = workspaces[item.id];
                             const score = workspace.match_score ?? 0;
+                            const matchLevel = resolveMatchLevel(workspace.match_level, score);
                             return (
                               <>
                                 <div className="tracker-workspace-header">
@@ -1232,9 +1234,7 @@ export function TrackerPage({
                                   </div>
                                   <div
                                     className="match-ring"
-                                    aria-label={t("tracker.workspaceMatch", {
-                                      score,
-                                    })}
+                                    aria-label={`${t("job.matchScore")} ${t(`job.matchLevel.${matchLevelTranslationKey(matchLevel)}`)}`}
                                     style={
                                       {
                                         "--match-score": `${Math.max(0, Math.min(100, score)) * 3.6}deg`,
@@ -1242,8 +1242,8 @@ export function TrackerPage({
                                     }
                                   >
                                     <span>
-                                      {score}
-                                      <small>/100</small>
+                                      {t(`job.matchLevel.${matchLevelTranslationKey(matchLevel)}`)}
+                                      <small>{t("job.matchScore")}</small>
                                     </span>
                                   </div>
                                 </div>

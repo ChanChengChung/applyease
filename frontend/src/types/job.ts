@@ -37,6 +37,7 @@ export type EligibilityCheck = {
 export type MatchReport = {
   job: Job;
   overall_score: number;
+  match_level?: "low" | "medium" | "high" | "very_high";
   matched_skills: string[];
   missing_skills: string[];
   evidence: Evidence[];
@@ -61,6 +62,7 @@ export type ApplicationReadiness = {
   blockers: number;
   warnings: number;
   match_score: number;
+  match_level?: "low" | "medium" | "high" | "very_high";
   missing_required_skills: string[];
   items: {
     code: string;

@@ -53,7 +53,7 @@ class ResourceRead(BaseModel):
 
     # A human-readable band is the public contract; the numeric score remains
     # available for internal ranking and backwards compatibility only.
-    match_level: Literal["very_high", "high", "fair", "low"] = "fair"
+    match_level: Literal["very_high", "high", "medium", "low"] = "medium"
 
     matched_skills: list[str] = Field(default_factory=list)
 

@@ -54,6 +54,7 @@ class DashboardJobWorkspace(DashboardJob):
     """A compact, per-role command card that keeps application work together."""
 
     match_score: int
+    match_level: Literal["low", "medium", "high", "very_high"] = "low"
     evidence_count: int
     missing_skills: list[str]
     material_count: int

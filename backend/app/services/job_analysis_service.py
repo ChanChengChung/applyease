@@ -8,8 +8,9 @@ from datetime import datetime, timezone
 from app.models.experience import Experience
 from app.models.job import Job
 from app.schemas.job import JobAnalyzeRequest
-from app.ai.skills import JOB_SKILLS
+from app.ai.skills import JOB_COMPETENCIES, JOB_COMPETENCY_EVIDENCE_TERMS, JOB_SKILLS
 from app.schemas.job import EligibilityCheck, Evidence, JobRead, MatchReport
+from app.services.match_level_service import match_level_for_score
 _STOPWORDS = {
     "the",
     "and",
@@ -210,6 +211,12 @@ def _skill_in_preferred_context(line: str, skill: str) -> bool:
     return False
 
 
+def _requirement_is_stated(text: str, requirement: str) -> bool:
+    """Check the wording used in the posting for a canonical requirement."""
+    terms = JOB_COMPETENCIES.get(requirement, (requirement,))
+    return any(_contains(text, term) for term in terms)
+
+
 def extract_job_requirements(description: str) -> dict[str, list[str]]:
     lines = [
         re.sub(r"\s+", " ", line.strip(" -•●▪\t"))
@@ -217,6 +224,11 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         if line.strip()
     ]
     skills = [skill for skill in JOB_SKILLS if _contains(description, skill)]
+    skills.extend(
+        competency
+        for competency, posting_terms in JOB_COMPETENCIES.items()
+        if any(_contains(description, term) for term in posting_terms)
+    )
     required: list[str] = []
     preferred: list[str] = []
     responsibilities: list[str] = []
@@ -259,7 +271,7 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
                 qualifications.append(clause)
 
     preferred_skill_names = [
-        skill for skill in skills if any(_contains(clause, skill) for clause in preferred)
+        skill for skill in skills if any(_requirement_is_stated(clause, skill) for clause in preferred)
     ]
     required_context_lines = [
         clause
@@ -269,17 +281,21 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
     required_skill_names = [
         skill
         for skill in skills
-        if any(_contains(clause, skill) for clause in required_context_lines)
+        if any(_requirement_is_stated(clause, skill) for clause in required_context_lines)
         and skill not in preferred_skill_names
     ]
-    if not required_skill_names:
-        structured_lines = [*required, *qualifications, *responsibilities]
-        required_skill_names = [
-            skill
-            for skill in skills
-            if any(_contains(clause, skill) for clause in structured_lines)
-            and skill not in preferred_skill_names
-        ]
+    # A single qualifications sentence often contains several requirements.
+    # Do not stop after finding the first one (for example, “supply chain”)
+    # or a later “project management experience” requirement is silently
+    # discarded. These are still grounded in a structured job section, not a
+    # company overview or arbitrary prose.
+    structured_lines = [*required, *qualifications, *responsibilities]
+    required_skill_names.extend(
+        skill
+        for skill in skills
+        if any(_requirement_is_stated(clause, skill) for clause in structured_lines)
+        and skill not in preferred_skill_names
+    )
 
     return {
         "required_skills": _clean_items(required_skill_names),
@@ -358,6 +374,12 @@ def _tokens(text: str) -> set[str]:
     }
 
 
+def _matches_requirement(text: str, requirement: str) -> bool:
+    """Match a stated requirement with explicit, reviewable experience text."""
+    terms = (requirement, *JOB_COMPETENCY_EVIDENCE_TERMS.get(requirement, ()))
+    return any(_contains(text, term) for term in terms)
+
+
 def _evidence_quote(item: Experience, requirement: str) -> str:
     segments = [line.strip() for line in (item.description or "").splitlines() if line.strip()]
 
@@ -370,8 +392,8 @@ def _evidence_quote(item: Experience, requirement: str) -> str:
     )
 
     return next(
-        (segment for segment in segments if _contains(segment, requirement)),
-        segments[0] if segments else item.title,
+        (segment for segment in segments if _matches_requirement(segment, requirement)),
+        item.title,
     )
 
 
@@ -387,7 +409,7 @@ def _matched(
             (
                 candidate
                 for candidate in confirmed
-                if _contains(_experience_text(candidate), requirement)
+                if _matches_requirement(_experience_text(candidate), requirement)
             ),
             None,
         )
@@ -411,9 +433,18 @@ def _matched(
     )
 
 
-def _relevance_score(job: Job, confirmed: list[Experience]) -> int:
+def _relevance_score(job: Job, confirmed: list[Experience], requirements: list[str]) -> int:
+    # Do not dilute experience relevance with a long employer introduction.
+    # Title, responsibilities and qualifications are the applicant-facing part
+    # of the role; explicit requirement coverage is scored separately below.
     job_tokens = _tokens(
-        " ".join((job.title or "", job.description or "", *(job.responsibilities or [])))
+        " ".join(
+            (
+                job.title or "",
+                *(job.responsibilities or []),
+                *(job.qualifications or []),
+            )
+        )
     )
 
     if not job_tokens or not confirmed:
@@ -422,9 +453,16 @@ def _relevance_score(job: Job, confirmed: list[Experience]) -> int:
     values = []
 
     for item in confirmed:
-        overlap = len(job_tokens & _tokens(_experience_text(item)))
-
-        values.append(min(overlap / max(len(job_tokens), 1), 1.0))
+        experience_text = _experience_text(item)
+        overlap = len(job_tokens & _tokens(experience_text))
+        lexical = min(overlap / max(min(len(job_tokens), 20), 1), 1.0)
+        competency_coverage = (
+            sum(_matches_requirement(experience_text, requirement) for requirement in requirements)
+            / len(requirements)
+            if requirements
+            else 0
+        )
+        values.append(min(lexical * 0.3 + competency_coverage * 0.7, 1.0))
 
     # Use the best small set of records rather than a single record or every
     # record. A single maximum hides whether the applicant has more than one
@@ -464,7 +502,7 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
         "preferred_skill_match": (
             round(len(matched_preferred) / max(len(preferred), 1) * 10) if preferred else 0
         ),
-        "experience_relevance": _relevance_score(job, confirmed),
+        "experience_relevance": _relevance_score(job, confirmed, [*required, *preferred]),
         "quantified_evidence": quantified * 15,
         "education_background": education,
     }
@@ -481,6 +519,7 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
     return MatchReport(
         job=_job_read_with_resolved_skills(job, required, preferred),
         overall_score=overall,
+        match_level=match_level_for_score(overall),
         matched_skills=matched_required + matched_preferred,
         missing_skills=missing_required + missing_preferred,
         evidence=evidence,
