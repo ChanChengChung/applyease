@@ -33,6 +33,7 @@ export function WelcomePage({
           mode="new"
           onChangeMode={leaveNewPath}
           onOpenLearningPlan={onOpenLearningPlan}
+          showSavedPlans={false}
         />
       </main>
     );

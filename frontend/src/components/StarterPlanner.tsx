@@ -15,6 +15,8 @@ type Props = {
   onImportCV?: () => void;
   onChangeMode?: () => void;
   onOpenLearningPlan?: () => void;
+  /** Saved plans belong to the learning workspace, not the fresh-start flow. */
+  showSavedPlans?: boolean;
 };
 
 /**
@@ -27,6 +29,7 @@ export function StarterPlanner({
   onImportCV,
   onChangeMode,
   onOpenLearningPlan,
+  showSavedPlans = true,
 }: Props) {
   const t = useT();
   const [interest, setInterest] = useState("");
@@ -51,6 +54,11 @@ export function StarterPlanner({
     interest.trim().length > 0 && interest.trim().length < 8;
 
   useEffect(() => {
+    if (!showSavedPlans) {
+      setSavedPlans([]);
+      setSavedPlansLoading(false);
+      return;
+    }
     let active = true;
     setSavedPlansLoading(true);
     void listStarterPlans()
@@ -74,7 +82,7 @@ export function StarterPlanner({
     return () => {
       active = false;
     };
-  }, []);
+  }, [showSavedPlans]);
 
   const createPlan = async () => {
     if (interest.trim().length < 8) {
@@ -188,7 +196,7 @@ export function StarterPlanner({
           </button>
         </div>
       )}
-      {savedPlans.length > 0 && (
+      {showSavedPlans && savedPlans.length > 0 && (
         <section className="starter-plan-folder" aria-label={t("starter.folderTitle")}>
           <div className="starter-plan-folder-heading">
             <div>
