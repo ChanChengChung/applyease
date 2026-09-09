@@ -262,6 +262,7 @@ def build_match_report_ai(
         missing_skills=missing,
         evidence=evidence,
         considered_experience_ids=list(by_id),
+        confirmed_experience_count=len(confirmed),
         matched_required_skills=matched_required,
         missing_required_skills=missing_required,
         matched_preferred_skills=matched_preferred,

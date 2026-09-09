@@ -829,7 +829,11 @@ function MatchResult({
             ))}
           </ul>
         ) : (
-          <p>{t("job.confirmFirst")}</p>
+          <p>
+            {(report.confirmed_experience_count ?? report.considered_experience_ids.length) > 0
+              ? t("job.noEvidence")
+              : t("job.confirmFirst")}
+          </p>
         )}
       </div>
       <div className="card proof-map role-analysis-proof-map">

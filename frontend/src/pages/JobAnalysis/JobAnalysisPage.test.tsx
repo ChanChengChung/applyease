@@ -39,6 +39,7 @@ const report = {
     },
   ],
   considered_experience_ids: [7],
+  confirmed_experience_count: 1,
 };
 
 describe("JobAnalysisPage", () => {
@@ -234,6 +235,26 @@ describe("JobAnalysisPage", () => {
     await user.type(screen.getByLabelText("技能要求"), "Python");
 
     expect(screen.getByRole("button", { name: "分析这份职位简介" })).toBeEnabled();
+  });
+
+  it("distinguishes no confirmed experiences from confirmed experiences with no evidence", async () => {
+    const user = userEvent.setup();
+    api.previewManualJobAnalysis.mockResolvedValue({
+      ...report,
+      job: { ...job, id: 0 },
+      evidence: [],
+      matched_skills: [],
+      missing_skills: ["Python", "Docker"],
+      considered_experience_ids: [7],
+      confirmed_experience_count: 1,
+    });
+    renderWithProviders(<JobAnalysisPage />);
+    await user.click(screen.getByRole("button", { name: /手动建立职位简介/ }));
+    await user.type(screen.getByLabelText("其他已知要求"), job.description);
+    await user.click(screen.getByRole("button", { name: "分析这份职位简介" }));
+
+    expect(await screen.findByText("暂无匹配证据")).toBeInTheDocument();
+    expect(screen.queryByText("请先在个人经历库确认经历，再生成匹配证据。")).not.toBeInTheDocument();
   });
 
   it("restores an unsaved analysis after the workspace is remounted", async () => {

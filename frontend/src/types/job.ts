@@ -41,6 +41,8 @@ export type MatchReport = {
   missing_skills: string[];
   evidence: Evidence[];
   considered_experience_ids: number[];
+  /** Number of confirmed experiences considered by the backend matcher. */
+  confirmed_experience_count?: number;
 
   matched_required_skills?: string[];
   missing_required_skills?: string[];

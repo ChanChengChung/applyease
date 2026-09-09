@@ -485,6 +485,7 @@ def build_match_report(job: Job, experiences: list[Experience]) -> MatchReport:
         missing_skills=missing_required + missing_preferred,
         evidence=evidence,
         considered_experience_ids=[item.id for item in confirmed],
+        confirmed_experience_count=len(confirmed),
         matched_required_skills=matched_required,
         missing_required_skills=missing_required,
         matched_preferred_skills=matched_preferred,

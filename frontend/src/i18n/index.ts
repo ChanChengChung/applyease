@@ -641,6 +641,7 @@ const en: Dict = {
   "job.evidence": "Match evidence",
   "job.confirmFirst":
     "Confirm experiences in the Experience Bank first, then generate match evidence.",
+  "job.noEvidence": "No matching evidence found in your confirmed experiences.",
   "job.eligibilityVerdict.ready": "Eligible to apply",
   "job.eligibilityVerdict.prepare": "Eligible, but prepare first",
   "job.eligibilityVerdict.confirm": "Confirm eligibility before applying",
@@ -2177,6 +2178,7 @@ const zhCN: Dict = {
   "job.scoreUnit": "{label}：{value} 分",
   "job.evidence": "匹配证据",
   "job.confirmFirst": "请先在个人经历库确认经历，再生成匹配证据。",
+  "job.noEvidence": "暂无匹配证据",
   "job.eligibilityVerdict.ready": "可以直接申请",
   "job.eligibilityVerdict.prepare": "可以申请，但需先补强",
   "job.eligibilityVerdict.confirm": "申请前请先确认资格",
@@ -3653,6 +3655,7 @@ const zhTW: Dict = {
   "job.scoreUnit": "{label}：{value} 分",
   "job.evidence": "匹配證據",
   "job.confirmFirst": "請先在個人經歷庫確認經歷，再生成匹配證據。",
+  "job.noEvidence": "暫無匹配證據",
   "job.eligibilityVerdict.ready": "可以直接申請",
   "job.eligibilityVerdict.prepare": "可以申請，但需先補強",
   "job.eligibilityVerdict.confirm": "申請前請先確認資格",

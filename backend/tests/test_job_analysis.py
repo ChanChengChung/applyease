@@ -47,6 +47,31 @@ def test_job_analysis_extracts_requirements_and_matches_confirmed_evidence():
     assert "C++" in data["missing_skills"]
 
     assert any(item["experience_id"] == experience["id"] for item in data["evidence"])
+    assert data["confirmed_experience_count"] >= 1
+
+
+def test_match_report_reports_confirmed_experience_count_when_no_skills_match():
+    client.post(
+        "/api/v1/experiences",
+        json={
+            "title": "Confirmed communications experience",
+            "description": "Prepared event communications and coordinated volunteers.",
+            "confirmed": True,
+        },
+    )
+
+    job = client.post(
+        "/api/v1/jobs/analyze",
+        json={
+            "title": "Platform Engineer",
+            "description": "Required: Kubernetes and Rust experience.",
+        },
+    ).json()
+
+    report = client.get(f"/api/v1/jobs/{job['id']}/match-report").json()
+
+    assert report["confirmed_experience_count"] >= 1
+    assert report["evidence"] == []
 
 
 def test_unconfirmed_experience_is_not_used_as_evidence():

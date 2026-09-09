@@ -174,6 +174,11 @@ class MatchReport(BaseModel):
 
     considered_experience_ids: list[int]
 
+    # Keep the evidence-empty state explainable to clients: an empty evidence
+    # list can mean either that the learner has not confirmed any experience,
+    # or that confirmed experience simply does not support this role.
+    confirmed_experience_count: int = Field(default=0, ge=0)
+
     matched_required_skills: list[str] = Field(default_factory=list)
 
     missing_required_skills: list[str] = Field(default_factory=list)
