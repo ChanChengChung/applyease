@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 from app.models.experience import Experience
 from app.models.job import Job
 from app.schemas.job import JobAnalyzeRequest
-from app.ai.skills import JOB_COMPETENCIES, JOB_COMPETENCY_EVIDENCE_TERMS, JOB_SKILLS
+from app.ai.skills import (
+    JOB_COMPETENCIES,
+    JOB_COMPETENCY_EVIDENCE_TERMS,
+    JOB_SKILL_ALIASES,
+    JOB_SKILLS,
+    applicable_job_competencies,
+)
 from app.schemas.job import EligibilityCheck, Evidence, JobRead, MatchReport
 from app.services.match_level_service import match_level_for_score
 _STOPWORDS = {
@@ -65,6 +71,15 @@ _REQUIRED_SKILL_CONTEXT = (
     "programming language",
     "use ",
     "using ",
+    "必备",
+    "必須",
+    "必须",
+    "要求",
+    "具备",
+    "具備",
+    "熟悉",
+    "经验",
+    "經驗",
 )
 
 
@@ -213,7 +228,7 @@ def _skill_in_preferred_context(line: str, skill: str) -> bool:
 
 def _requirement_is_stated(text: str, requirement: str) -> bool:
     """Check the wording used in the posting for a canonical requirement."""
-    terms = JOB_COMPETENCIES.get(requirement, (requirement,))
+    terms = (*JOB_SKILL_ALIASES.get(requirement, ()), *JOB_COMPETENCIES.get(requirement, (requirement,)))
     return any(_contains(text, term) for term in terms)
 
 
@@ -223,10 +238,15 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         for line in description.splitlines()
         if line.strip()
     ]
-    skills = [skill for skill in JOB_SKILLS if _contains(description, skill)]
+    skills = [
+        skill
+        for skill in JOB_SKILLS
+        if any(_contains(description, term) for term in JOB_SKILL_ALIASES.get(skill, (skill,)))
+    ]
+    applicable_competencies = applicable_job_competencies(description)
     skills.extend(
         competency
-        for competency, posting_terms in JOB_COMPETENCIES.items()
+        for competency, posting_terms in applicable_competencies.items()
         if any(_contains(description, term) for term in posting_terms)
     )
     required: list[str] = []
@@ -240,18 +260,40 @@ def extract_job_requirements(description: str) -> dict[str, list[str]]:
         # an earlier “required” skill.
         clauses = [
             clause.strip()
-            for clause in re.split(r"(?<=[.!?])\s+|[;|]", line)
+            for clause in re.split(r"(?<=[.!?。！？])\s*|[;；|]", line)
             if clause.strip()
         ]
         for clause in clauses:
             lower = clause.casefold()
             is_required = any(
                 word in lower
-                for word in ("required", "must have", "must-have", "essential", "minimum")
+                for word in (
+                    "required",
+                    "must have",
+                    "must-have",
+                    "essential",
+                    "minimum",
+                    "必备",
+                    "必備",
+                    "必須",
+                    "必须",
+                    "任职要求",
+                    "職位要求",
+                )
             )
             is_preferred = any(
                 word in lower
-                for word in ("preferred", "nice to have", "plus", "bonus")
+                for word in (
+                    "preferred",
+                    "nice to have",
+                    "plus",
+                    "bonus",
+                    "加分",
+                    "优先",
+                    "優先",
+                    "加分项",
+                    "加分項",
+                )
             )
             if is_required:
                 required.append(clause)
@@ -376,7 +418,11 @@ def _tokens(text: str) -> set[str]:
 
 def _matches_requirement(text: str, requirement: str) -> bool:
     """Match a stated requirement with explicit, reviewable experience text."""
-    terms = (requirement, *JOB_COMPETENCY_EVIDENCE_TERMS.get(requirement, ()))
+    terms = (
+        requirement,
+        *JOB_SKILL_ALIASES.get(requirement, ()),
+        *JOB_COMPETENCY_EVIDENCE_TERMS.get(requirement, ()),
+    )
     return any(_contains(text, term) for term in terms)
 
 

@@ -89,6 +89,18 @@ def test_rule_extractor_does_not_turn_career_domains_into_skill_gaps():
     assert "Market Making" not in result["required_skills"]
 
 
+def test_rule_extractor_supports_simplified_and_traditional_chinese_aliases():
+    simplified = extract_job_requirements("必备：Python、SQL、机器学习和供应链管理经验。加分：Docker。")
+    traditional = extract_job_requirements("必備：資料分析、供應鏈管理與專案管理經驗。加分：容器化經驗。")
+
+    assert {"Python", "SQL", "Machine Learning", "Supply Chain"} <= set(simplified["required_skills"])
+    assert simplified["preferred_skills"] == ["Docker"]
+    assert {"Data Analysis", "Supply Chain", "Project Management"} <= set(
+        traditional["required_skills"]
+    )
+    assert traditional["preferred_skills"] == ["Docker"]
+
+
 def test_non_technical_role_requirements_match_grounded_transferable_evidence():
     job = Job(
         id=104,
@@ -126,6 +138,34 @@ def test_non_technical_role_requirements_match_grounded_transferable_evidence():
     assert report.evidence
     assert report.score_breakdown["experience_relevance"] > 0
     assert report.match_level in {"medium", "high", "very_high"}
+
+
+def test_chinese_evidence_aliases_are_reviewable_matches():
+    job = Job(
+        id=105,
+        title="供应链实习生",
+        company="示例公司",
+        description="必备：供应链管理和项目管理经验，需要能够协调跨部门交付并持续改进流程。",
+        required_skills=[],
+        preferred_skills=[],
+        responsibilities=[],
+        qualifications=[],
+    )
+    job.created_at = datetime.now(timezone.utc)
+    experience = Experience(
+        id=205,
+        title="项目协调员",
+        organization="示例组织",
+        description="协调供应链采购计划，并执行跨部门项目。",
+        skills=[],
+        achievements=[],
+        confirmed=True,
+    )
+
+    report = build_match_report(job, [experience])
+
+    assert set(report.matched_required_skills) == {"Supply Chain", "Project Management"}
+    assert {item.requirement for item in report.evidence} == {"Supply Chain", "Project Management"}
 
 
 def test_saved_analysis_is_augmented_with_explicit_language_requirements():
