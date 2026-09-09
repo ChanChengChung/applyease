@@ -2674,6 +2674,9 @@ select {
 .date-summary-list {
   display: grid;
   gap: 5px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .date-summary-event {
   display: flex;

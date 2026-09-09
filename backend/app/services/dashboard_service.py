@@ -199,7 +199,9 @@ def build_dashboard_summary(snapshot: dict, today: date | None = None) -> dict:
         ):
             if event_date:
                 date_events.append((event_date, item, kind))
-    date_events.sort(key=lambda event: (event[0] < today, event[0]))
+    # Sort by the milestone's actual date, not by when the application record
+    # was created. This keeps the reminder panel chronological and predictable.
+    date_events.sort(key=lambda event: (event[0], event[2]))
 
     upcoming = date_events[:5]
     urgent_deadlines_count = sum(

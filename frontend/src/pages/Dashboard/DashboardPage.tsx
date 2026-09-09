@@ -174,7 +174,7 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
               <strong>{t("dashboard.attentionDates")}</strong>
             </div>
             <div className="date-summary-list">
-              {summary.upcoming_deadlines.slice(0, 3).map((item) => {
+              {summary.upcoming_deadlines.map((item) => {
                 const kindLabel = item.kind === "interview"
                   ? t("dashboard.interview")
                   : item.kind === "follow_up" ? t("dashboard.followUp") : t("dashboard.deadline");
