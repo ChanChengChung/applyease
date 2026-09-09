@@ -2638,6 +2638,63 @@ select {
   display: grid;
   margin-top: 17px;
 }
+.dashboard-date-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+}
+.date-summary-column {
+  min-width: 0;
+  padding: 17px 20px;
+}
+.date-summary-urgent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.date-summary-urgent button {
+  white-space: nowrap;
+}
+.date-summary-upcoming {
+  border-left: 1px solid #f0d9a9;
+  background: rgba(255, 255, 255, 0.4);
+}
+.date-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: #7b5318;
+  font-size: 0.86rem;
+}
+.date-summary-list {
+  display: grid;
+  gap: 5px;
+}
+.date-summary-event {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  padding: 3px 0;
+  color: #6b7786;
+  text-align: left;
+  font-size: 0.73rem;
+}
+.date-summary-event:hover span { color: #2456dc; }
+.date-summary-event time { flex: 0 0 auto; color: #2d435e; font-weight: 800; }
+.date-summary-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-summary-event em { flex: 0 0 auto; color: #d94d4d; font-style: normal; }
+.date-summary-event.overdue time { color: #d94d4d; }
+@media (max-width: 760px) {
+  .dashboard-date-summary { grid-template-columns: 1fr; }
+  .date-summary-upcoming { border-top: 1px solid #f0d9a9; border-left: 0; }
+  .date-summary-urgent { grid-template-columns: auto minmax(0, 1fr); }
+  .date-summary-urgent button { grid-column: 2; justify-self: start; }
+}
 .timeline-event {
   display: grid;
   grid-template-columns: 76px 17px minmax(0, 1fr);

@@ -156,16 +156,43 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
         </div>
       </header>
 
-      {(summary.urgent_deadlines_count || 0) > 0 && (
-        <section className="dashboard-urgent-banner" role="status">
-          <span className="dashboard-urgent-mark" aria-hidden="true">!</span>
-          <div>
-            <strong>{t("dashboard.urgentDeadlineTitle", { n: summary.urgent_deadlines_count || 0 })}</strong>
-            <p>{t("dashboard.urgentDeadlineHelp")}</p>
+      {((summary.urgent_deadlines_count || 0) > 0 || summary.upcoming_deadlines.length > 0) && (
+        <section className="dashboard-urgent-banner dashboard-date-summary" role="status">
+          <div className="date-summary-column date-summary-urgent">
+            <span className="dashboard-urgent-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>{t("dashboard.urgentDeadlineTitle", { n: summary.urgent_deadlines_count || 0 })}</strong>
+              <p>{t("dashboard.urgentDeadlineHelp")}</p>
+            </div>
+            <button type="button" onClick={() => navigate("tracker")}>
+              {t("dashboard.manageDates")} →
+            </button>
           </div>
-          <button type="button" onClick={() => navigate("tracker")}>
-            {t("dashboard.manageDates")} →
-          </button>
+          <div className="date-summary-column date-summary-upcoming">
+            <div className="date-summary-heading">
+              <span aria-hidden="true">◷</span>
+              <strong>{t("dashboard.attentionDates")}</strong>
+            </div>
+            <div className="date-summary-list">
+              {summary.upcoming_deadlines.slice(0, 3).map((item) => {
+                const kindLabel = item.kind === "interview"
+                  ? t("dashboard.interview")
+                  : item.kind === "follow_up" ? t("dashboard.followUp") : t("dashboard.deadline");
+                return (
+                  <button
+                    type="button"
+                    className={`date-summary-event${item.is_overdue ? " overdue" : ""}`}
+                    key={`${item.id}-${item.kind}-${item.deadline}`}
+                    onClick={() => onNavigate("tracker", item.job_id ? { id: item.job_id, title: item.role, company: item.company } : undefined)}
+                  >
+                    <time dateTime={item.deadline}>{item.deadline}</time>
+                    <span>{kindLabel} · {item.company} · {item.role}</span>
+                    {item.is_overdue && <em>{t("dashboard.overdue")}</em>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </section>
       )}
 
@@ -265,78 +292,6 @@ export function DashboardPage({ onNavigate, onJobLoaded, initialJob }: Props) {
           </div>
         ) : (
           <p className="privacy-note">{t("dashboard.roleCenterEmpty")}</p>
-        )}
-      </section>
-
-      <section
-        className="dashboard-panel timeline-panel dashboard-dates-panel"
-        aria-label={t("dashboard.applicationTimeline")}
-      >
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">{t("dashboard.upcomingDates")}</p>
-            <h2>{t("dashboard.applicationTimeline")}</h2>
-            <p className="dashboard-date-intro">{t("dashboard.datePanelSub")}</p>
-          </div>
-          <button
-            type="button"
-            className="date-panel-action"
-            onClick={() => navigate("tracker")}
-          >
-            <span aria-hidden="true">◷</span>
-            {t("dashboard.viewTracker")}
-          </button>
-        </div>
-
-        {summary.upcoming_deadlines.length ? (
-          <div className="deadline-timeline">
-            {summary.upcoming_deadlines.map((item) => {
-              const kindLabel =
-                item.kind === "interview"
-                  ? t("dashboard.interview")
-                  : item.kind === "follow_up"
-                    ? t("dashboard.followUp")
-                    : t("dashboard.deadline");
-              return (
-                <button
-                  type="button"
-                  className={`timeline-event${item.is_overdue ? " overdue" : ""}`}
-                  key={`${item.id}-${item.kind}-${item.deadline}`}
-                  onClick={() =>
-                    onNavigate(
-                      "tracker",
-                      item.job_id
-                        ? {
-                            id: item.job_id,
-                            title: item.role,
-                            company: item.company,
-                          }
-                        : undefined,
-                    )
-                  }
-                >
-                  <time dateTime={item.deadline}>
-                    <strong>{item.deadline}</strong>
-                    <small>{kindLabel}</small>
-                  </time>
-                  <span className="timeline-rail" aria-hidden="true"><i /></span>
-                  <span className="timeline-copy">
-                    <strong>{item.company}</strong>
-                    <small>{item.role}</small>
-                    {item.is_overdue && <em>{t("dashboard.overdue")}</em>}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="timeline-empty">
-            <span aria-hidden="true">◌</span>
-            <p>{t("dashboard.noRecordedDates")}</p>
-            <button type="button" onClick={() => navigate("tracker")}>
-              {t("dashboard.manageDates")} →
-            </button>
-          </div>
         )}
       </section>
 
