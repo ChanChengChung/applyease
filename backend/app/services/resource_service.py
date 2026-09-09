@@ -284,6 +284,14 @@ def recommend_resources(
 ) -> list[ResourceRecommendation]:
     missing = {str(skill).strip().casefold() for skill in missing_skills if str(skill).strip()}
 
+    # A role with no extracted, reviewed gap must not fall back to every
+    # resource ever persisted in the shared catalogue.  That would leak stale
+    # context (for example a Warehouse Manager search result) into an
+    # unrelated Microsoft role.  The caller may still show evidence/material
+    # actions, but there is no justified skill-learning recommendation yet.
+    if not missing:
+        return []
+
     requested_rank = DIFFICULTY_RANK.get(level) if level else None
 
     selected_goal = goal if goal in PLAN_GOALS else "skills"

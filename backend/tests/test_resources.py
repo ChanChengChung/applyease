@@ -74,6 +74,14 @@ def test_role_gap_recommendations_never_substitute_an_unrelated_resource():
     assert recommend_resources(["OCaml"], [docker], limit=4) == []
 
 
+def test_role_without_extracted_gaps_does_not_receive_stale_catalogue_results():
+    warehouse_listing = SimpleNamespace(
+        id=2, skills=[], difficulty="beginner", duration_hours=6,
+        project={"deliverables": ["Notes"]}, free=False,
+    )
+    assert recommend_resources([], [warehouse_listing], limit=4) == []
+
+
 def test_ocaml_gap_receives_the_official_ocaml_resource():
     job = client.post(
         "/api/v1/jobs/analyze",
@@ -353,11 +361,18 @@ def test_research_plan_is_persisted_updated_restored_and_deleted(monkeypatch):
     assert edited.json()["profile_summary"] == "Edited by the student"
     assert edited.json()["sources"][0]["title"] == "Kaggle"
 
-    # Regeneration updates the current record rather than leaving a hidden duplicate.
+    # Regeneration preserves the prior document as a separately selectable
+    # history version for this role.
     regenerated = client.post("/api/v1/resources/research-plan", json=payload)
     assert regenerated.status_code == 200
-    assert regenerated.json()["id"] == plan["id"]
+    assert regenerated.json()["id"] != plan["id"]
+    history = client.get(f"/api/v1/resources/research-plans/history?job_id={job['id']}")
+    assert history.status_code == 200
+    assert [item["id"] for item in history.json()] == [regenerated.json()["id"], plan["id"]]
 
+    deleted = client.delete(f"/api/v1/resources/research-plans/{regenerated.json()['id']}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/v1/resources/research-plans?job_id={job['id']}").json()["id"] == plan["id"]
     deleted = client.delete(f"/api/v1/resources/research-plans/{plan['id']}")
     assert deleted.status_code == 204
     assert client.get(f"/api/v1/resources/research-plans?job_id={job['id']}").status_code == 404

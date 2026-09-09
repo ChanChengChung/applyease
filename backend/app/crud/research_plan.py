@@ -44,26 +44,14 @@ def list_for_job(
 
 
 def create_or_replace(db: Session, user_id: int, job_id: int, values: dict) -> ResearchPlan:
-    """Keep one editable plan per user, job, and optional starter plan.
+    """Persist a distinct, user-scoped version of a role reinforcement plan.
 
-    Re-running research refreshes the matching plan.  Different starter plans
-    intentionally get separate records so a student can compare preparation
-    paths for the same role without silently overwriting either one.
+    A regenerated plan is a new document rather than an overwrite.  This
+    preserves comparison history while the latest-for-job query still provides
+    the current version for the selected role/provenance bucket.
     """
-    has_starter_link = "starter_plan_id" in values
-    item = latest_for_job(
-        db,
-        user_id,
-        job_id,
-        values.get("starter_plan_id"),
-        match_starter_plan=has_starter_link,
-    )
-    if item is None:
-        item = ResearchPlan(user_id=user_id, job_id=job_id, **values)
-        db.add(item)
-    else:
-        for key, value in values.items():
-            setattr(item, key, value)
+    item = ResearchPlan(user_id=user_id, job_id=job_id, **values)
+    db.add(item)
     db.commit()
     db.refresh(item)
     return item

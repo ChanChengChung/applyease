@@ -1005,6 +1005,7 @@ export function ResourcePlanPage({
                   <span className="research-history-card-meta">
                     <strong>{t("research.version", { n: researchHistory.length - index })}</strong>
                     <small>{new Date(plan.updated_at).toLocaleDateString()}</small>
+                    <small>{selectedJob ? `${selectedJob.company} · ${selectedJob.title}` : ""}</small>
                   </span>
                   <span className="research-history-hover">{t("research.previewLabel")}: {concisePlanSummary(plan.profile_summary)}</span>
                 </button>
